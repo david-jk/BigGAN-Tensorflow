@@ -28,6 +28,7 @@ class BigGAN(object):
         """ Generator """
         self.ch = args.ch
         self.upsampling_method = args.upsampling_method
+        self.g_grow_factor = args.g_grow_factor
 
         self.z_dim = args.z_dim  # dimension of noise-vector
         if self.z_dim%self.depth!=0:
@@ -100,6 +101,13 @@ class BigGAN(object):
     # Generator
     ##################################################################################
 
+    def scale_channels(self, ch, factor):
+        return (int(ch * factor) + 7) // 8 * 8
+
+    def g_channels_for_block(self, b_i, b_count):
+        return self.scale_channels(self.ch,self.g_grow_factor**(b_count-b_i-1))
+
+
     def generator(self, z, is_training=True, reuse=False):
 
         opt = {"sn": self.sn,
@@ -117,7 +125,7 @@ class BigGAN(object):
             else: raise ValueError("Invalid image size specified: "+str(self.img_size))
 
             ch_mul = 2**(len(block_info["counts"])-1)
-            ch=ch_mul*self.ch
+            ch = self.g_channels_for_block(0, len(block_info["counts"]))
             x=fully_connected(z_split[0], units=4*4*ch, scope='dense', opt=opt)
             x=tf.reshape(x, shape=[-1, 4, 4, ch])
 
@@ -135,7 +143,7 @@ class BigGAN(object):
                 if b_i==block_info["sa_index"]:
                     x=self_attention_2(x, channels=ch, opt=opt, scope='self_attention')
 
-                ch=ch//2
+                ch = self.g_channels_for_block(b_i, len(block_info["counts"]))
                 ch_mul=ch_mul//2
 
             x = batch_norm(x, opt=opt)
