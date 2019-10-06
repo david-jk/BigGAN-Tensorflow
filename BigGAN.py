@@ -42,6 +42,9 @@ class BigGAN(object):
         self.sn = args.sn
         self.ld = args.ld
         self.bn_in_d = args.bn_in_d
+        self.d_ch = args.d_ch
+        if self.d_ch <= 0: self.d_ch = self.ch
+        self.d_grow_factor = args.d_grow_factor
 
         self.sample_num = args.sample_num  # number of generated images to be saved
         self.test_num = args.test_num
@@ -158,6 +161,9 @@ class BigGAN(object):
     # Discriminator
     ##################################################################################
 
+    def d_channels_for_block(self, b_i):
+        return self.scale_channels(self.d_ch,self.d_grow_factor**b_i)
+
     def discriminator(self, x, is_training=True, reuse=False):
 
         opt = {"sn": self.sn,
@@ -165,7 +171,7 @@ class BigGAN(object):
                "bn_in_d": self.bn_in_d}
 
         with tf.variable_scope("discriminator", reuse=reuse):
-            ch = self.ch
+            ch = self.d_channels_for_block(0)
 
             if   self.img_size==64: block_info={"counts": [1, 1, 1, 1], "sa_index": 1}
             elif self.img_size==128: block_info={"counts": [1, 1, 1, 1, 1], "sa_index": 1}
@@ -186,10 +192,10 @@ class BigGAN(object):
                 if b_i==block_info["sa_index"]:
                     x=self_attention_2(x, channels=ch, opt=opt, scope='self_attention')
 
-                ch=ch*2
+                ch=self.d_channels_for_block(b_i)
                 ch_mul=ch_mul*2
 
-            ch=ch//2  # last layer has same width as previous one
+            ch=self.d_channels_for_block(b_i-1)  # last layer has same width as previous one
 
             x = resblock(x, channels=ch, use_bias=False, opt=opt, scope='resblock')
             x = relu(x)

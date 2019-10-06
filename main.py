@@ -13,6 +13,7 @@ def parse_args():
     parser.add_argument('--iteration', type=int, default=10000, help='The number of training iterations')
     parser.add_argument('--batch_size', type=int, default=16, help='The size of batch per gpu')
     parser.add_argument('--ch', type=int, default=64, help='base channel number per layer')
+    parser.add_argument('--d_ch', type=int, default=0, help='base channel number per layer in discriminator')
 
     parser.add_argument('--print_freq', type=int, default=1000, help='The number of image_print_freqy')
     parser.add_argument('--save_freq', type=int, default=1000, help='The number of ckpt_save_freq')
@@ -29,6 +30,7 @@ def parse_args():
     parser.add_argument('--bn_in_d', type=str2bool, default=False, help='whether to use BN in the discriminator')
     parser.add_argument('--upsampling_method', type=str, default='deconv_4', help='[deconv_3 / deconv_4 / resize_conv]')
     parser.add_argument('--g_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the generator')
+    parser.add_argument('--d_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the discriminator')
 
     parser.add_argument('--gan_type', type=str, default='ra-hinge', help='[gan / lsgan / wgan-gp / wgan-lp / dragan / hinge / ra-hinge]')
     parser.add_argument('--ld', type=float, default=10.0, help='The gradient penalty lambda')
