@@ -1,6 +1,7 @@
 import scipy.misc
 import numpy as np
 import os
+import imageio
 from glob import glob
 
 import tensorflow as tf
@@ -86,8 +87,7 @@ def merge(images, size):
         raise ValueError('in merge(images,size) images parameter ''must have dimensions: HxW or HxWx3 or HxWx4')
 
 def imsave(images, size, path):
-    # image = np.squeeze(merge(images, size)) # 채널이 1인거 제거 ?
-    return scipy.misc.imsave(path, merge(images, size))
+    return imageio.imwrite(path, merge(images, size))
 
 
 def inverse_transform(images):
