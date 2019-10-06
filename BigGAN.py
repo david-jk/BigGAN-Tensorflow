@@ -246,7 +246,7 @@ class BigGAN(object):
         self.d_loss = discriminator_loss(self.gan_type, real=real_logits, fake=fake_logits) + GP
 
         # get loss for generator
-        self.g_loss = generator_loss(self.gan_type, fake=fake_logits)
+        self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits)
 
         """ Training """
         # divide trainable variables into a group for D and a group for G

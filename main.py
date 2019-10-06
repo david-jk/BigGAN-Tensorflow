@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument('--z_dim', type=int, default=128, help='Dimension of noise vector')
     parser.add_argument('--sn', type=str2bool, default=True, help='using spectral norm')
 
-    parser.add_argument('--gan_type', type=str, default='hinge', help='[gan / lsgan / wgan-gp / wgan-lp / dragan / hinge]')
+    parser.add_argument('--gan_type', type=str, default='hinge', help='[gan / lsgan / wgan-gp / wgan-lp / dragan / hinge / ra-hinge]')
     parser.add_argument('--ld', type=float, default=10.0, help='The gradient penalty lambda')
 
     parser.add_argument('--n_critic', type=int, default=2, help='The number of critic')
