@@ -49,6 +49,8 @@ class BigGAN(object):
         self.sample_num = args.sample_num  # number of generated images to be saved
         self.static_sample_z = args.static_sample_z
         self.static_sample_seed = args.static_sample_seed
+        self.z_trunc_train = args.z_trunc_train
+        self.z_trunc_sample = args.z_trunc_sample
         self.test_num = args.test_num
 
         # train
@@ -256,7 +258,18 @@ class BigGAN(object):
         self.inputs = inputs_iterator.get_next()
 
         # noises
-        self.z = tf.truncated_normal(shape=[self.batch_size, 1, 1, self.z_dim], name='random_z')
+        if self.z_trunc_train:
+            self.z = tf.random.truncated_normal(shape=[self.batch_size, 1, 1, self.z_dim], name='random_z')
+        else:
+            self.z = tf.random.normal(shape=[self.batch_size, 1, 1, self.z_dim], name='random_z')
+
+        if self.z_trunc_sample==self.z_trunc_train:
+            self.test_z = self.z
+        else:
+            if self.z_trunc_sample:
+                self.test_z = tf.random.truncated_normal(shape=[self.batch_size, 1, 1, self.z_dim], name='test_random_z')
+            else:
+                self.test_z = tf.random.normal(shape=[self.batch_size, 1, 1, self.z_dim], name='test_random_z')
 
         """ Loss Function """
         # output of D for real images
@@ -293,10 +306,14 @@ class BigGAN(object):
 
         """" Testing """
         # for test
-        self.fake_images = self.generator(self.z, is_training=False, reuse=True)
+        self.fake_images = self.generator(self.test_z, is_training=False, reuse=True)
 
         if self.static_sample_z:
-            self.sample_z_val = self.sess.run(tf.random.normal(shape=[max(self.sample_num, self.batch_size), 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
+            if self.z_trunc_sample:
+                self.sample_z_val = self.sess.run(tf.random.truncated_normal(shape=[max(self.sample_num, self.batch_size), 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
+            else:
+                self.sample_z_val = self.sess.run(tf.random.normal(shape=[max(self.sample_num, self.batch_size), 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
+
             self.sample_z = tf.placeholder(tf.float32, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
             self.sample_fake_images = self.generator(self.sample_z, reuse=True, is_training=False)
         else:
