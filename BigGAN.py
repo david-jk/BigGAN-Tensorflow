@@ -1,3 +1,4 @@
+import sys
 import time
 from ops import *
 from utils import *
@@ -321,6 +322,8 @@ class BigGAN(object):
                     g_loss = past_g_loss
                 print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
                       % (epoch, idx, self.iteration, time.time() - start_time, d_loss, g_loss))
+
+                sys.stdout.flush()
 
                 # save training results for every 300 steps
                 if np.mod(idx + 1, self.print_freq) == 0:
