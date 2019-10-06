@@ -156,12 +156,19 @@ def resblock(x_init, channels, opt, use_bias=True, scope='resblock'):
 
         return x + x_init
 
+def upconv(x, channels, opt, use_bias=True):
+    if opt["upsampling_method"] == 'deconv_3':
+        return deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
+    elif opt["upsampling_method"] == 'deconv_4':
+        return deconv(x, channels, kernel=4, stride=2, use_bias=use_bias, opt=opt)
+    else: raise ValueError("Invalid upsampling method specified: "+str(opt["upsampling_method"]))
+
 def resblock_up(x_init, channels, opt, use_bias=True, scope='resblock_up'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
             x = batch_norm(x_init, opt=opt)
             x = relu(x)
-            x = deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
+            x = upconv(x, channels, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('res2') :
             x = batch_norm(x, opt=opt)
@@ -169,7 +176,7 @@ def resblock_up(x_init, channels, opt, use_bias=True, scope='resblock_up'):
             x = deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
-            x_init = deconv(x_init, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
+            x_init = upconv(x_init, channels, use_bias=use_bias, opt=opt)
 
 
     return x + x_init
@@ -179,7 +186,7 @@ def resblock_up_condition(x_init, z, channels, opt, use_bias=True, scope='resblo
         with tf.variable_scope('res1'):
             x = condition_batch_norm(x_init, z, opt=opt)
             x = relu(x)
-            x = deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
+            x = upconv(x, channels, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('res2') :
             x = condition_batch_norm(x, z, opt=opt)
@@ -187,7 +194,7 @@ def resblock_up_condition(x_init, z, channels, opt, use_bias=True, scope='resblo
             x = deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
-            x_init = deconv(x_init, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
+            x_init = upconv(x_init, channels, use_bias=use_bias, opt=opt)
 
 
     return x + x_init

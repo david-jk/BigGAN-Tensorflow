@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument('--z_dim', type=int, default=256, help='Dimension of noise vector')
     parser.add_argument('--sn', type=str2bool, default=True, help='using spectral norm')
     parser.add_argument('--bn_in_d', type=str2bool, default=False, help='whether to use BN in the discriminator')
+    parser.add_argument('--upsampling_method', type=str, default='deconv_4', help='[deconv_3 / deconv_4]')
 
     parser.add_argument('--gan_type', type=str, default='ra-hinge', help='[gan / lsgan / wgan-gp / wgan-lp / dragan / hinge / ra-hinge]')
     parser.add_argument('--ld', type=float, default=10.0, help='The gradient penalty lambda')

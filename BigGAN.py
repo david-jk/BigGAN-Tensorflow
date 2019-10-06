@@ -27,6 +27,7 @@ class BigGAN(object):
 
         """ Generator """
         self.ch = args.ch
+        self.upsampling_method = args.upsampling_method
 
         self.z_dim = args.z_dim  # dimension of noise-vector
         if self.z_dim%self.depth!=0:
@@ -103,7 +104,7 @@ class BigGAN(object):
 
         opt = {"sn": self.sn,
                "is_training": is_training,
-               "bn_in_d": self.bn_in_d}
+               "upsampling_method": self.upsampling_method}
 
         with tf.variable_scope("generator", reuse=reuse):
             split_dim = self.z_dim // self.depth
