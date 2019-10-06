@@ -47,6 +47,8 @@ class BigGAN(object):
         self.d_grow_factor = args.d_grow_factor
 
         self.sample_num = args.sample_num  # number of generated images to be saved
+        self.static_sample_z = args.static_sample_z
+        self.static_sample_seed = args.static_sample_seed
         self.test_num = args.test_num
 
         # train
@@ -293,6 +295,13 @@ class BigGAN(object):
         # for test
         self.fake_images = self.generator(self.z, is_training=False, reuse=True)
 
+        if self.static_sample_z:
+            self.sample_z_val = self.sess.run(tf.random.normal(shape=[max(self.sample_num, self.batch_size), 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
+            self.sample_z = tf.placeholder(tf.float32, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
+            self.sample_fake_images = self.generator(self.sample_z, reuse=True, is_training=False)
+        else:
+            self.sample_fake_images = self.fake_images
+
         """ Summary """
         self.d_sum = tf.summary.scalar("d_loss", self.d_loss)
         self.g_sum = tf.summary.scalar("g_loss", self.g_loss)
@@ -363,7 +372,11 @@ class BigGAN(object):
 
                     batches = int(np.ceil(tot_num_samples/self.batch_size))
                     for b in range(batches):
-                        batch = self.sess.run(self.fake_images)
+                        if self.static_sample_z:
+                            batch = self.sess.run(self.sample_fake_images, feed_dict={self.sample_z: self.sample_z_val[b*self.batch_size:(b+1)*self.batch_size]})
+                        else:
+                            batch = self.sess.run(self.sample_fake_images)
+
                         if b==0: samples = batch
                         else: samples = np.append(samples, batch, axis=0)
 
