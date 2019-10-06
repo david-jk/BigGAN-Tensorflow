@@ -147,12 +147,12 @@ def resblock(x_init, channels, opt, use_bias=True, scope='resblock'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
             x = conv(x_init, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
-            x = batch_norm(x, opt=opt)
+            if (opt["bn_in_d"]): x = batch_norm(x, opt=opt)
             x = relu(x)
 
         with tf.variable_scope('res2'):
             x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
-            x = batch_norm(x, opt=opt)
+            if (opt["bn_in_d"]): x = batch_norm(x, opt=opt)
 
         return x + x_init
 
@@ -196,12 +196,13 @@ def resblock_up_condition(x_init, z, channels, opt, use_bias=True, scope='resblo
 def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
-            x = batch_norm(x_init, opt=opt)
+            if (opt["bn_in_d"]): x = batch_norm(x_init, opt=opt)
+            else: x = x_init
             x = relu(x)
             x = conv(x, channels, kernel=3, stride=2, pad=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('res2') :
-            x = batch_norm(x, opt=opt)
+            if (opt["bn_in_d"]): x = batch_norm(x, opt=opt)
             x = relu(x)
             x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
 

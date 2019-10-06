@@ -39,6 +39,7 @@ class BigGAN(object):
         self.n_critic = args.n_critic
         self.sn = args.sn
         self.ld = args.ld
+        self.bn_in_d = args.bn_in_d
 
         self.sample_num = args.sample_num  # number of generated images to be saved
         self.test_num = args.test_num
@@ -100,8 +101,9 @@ class BigGAN(object):
 
     def generator(self, z, is_training=True, reuse=False):
 
-        opt={"sn": self.sn,
-             "is_training": is_training}
+        opt = {"sn": self.sn,
+               "is_training": is_training,
+               "bn_in_d": self.bn_in_d}
 
         with tf.variable_scope("generator", reuse=reuse):
             split_dim = self.z_dim // self.depth
@@ -150,7 +152,8 @@ class BigGAN(object):
     def discriminator(self, x, is_training=True, reuse=False):
 
         opt = {"sn": self.sn,
-               "is_training": is_training}
+               "is_training": is_training,
+               "bn_in_d": self.bn_in_d}
 
         with tf.variable_scope("discriminator", reuse=reuse):
             ch = self.ch
