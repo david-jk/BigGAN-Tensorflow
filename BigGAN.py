@@ -5,7 +5,7 @@ from tensorflow.contrib.data import prefetch_to_device, shuffle_and_repeat, map_
 from tensorflow.contrib.opt import MovingAverageOptimizer
 
 
-class BigGAN_128(object):
+class BigGAN(object):
 
     def __init__(self, sess, args):
         self.model_name = "BigGAN"  # name for checkpoint
@@ -22,10 +22,16 @@ class BigGAN_128(object):
         self.print_freq = args.print_freq
         self.save_freq = args.save_freq
         self.img_size = args.img_size
+        self.depth = args.img_size.bit_length()-2
 
         """ Generator """
         self.ch = args.ch
+
         self.z_dim = args.z_dim  # dimension of noise-vector
+        if self.z_dim%self.depth!=0:
+            self.z_dim=self.z_dim + self.depth - self.z_dim%self.depth
+            print("Warning: z_dim must be divisible by ",self.depth,", changing to ",self.z_dim)
+
         self.gan_type = args.gan_type
 
         """ Discriminator """
@@ -66,26 +72,26 @@ class BigGAN_128(object):
         print()
 
         print("##### Information #####")
-        print("# BigGAN 128")
-        print("# gan type : ", self.gan_type)
-        print("# dataset : ", self.dataset_name)
-        print("# dataset number : ", self.dataset_num)
-        print("# batch_size : ", self.batch_size)
-        print("# epoch : ", self.epoch)
-        print("# iteration per epoch : ", self.iteration)
+        print("# BigGAN", self.img_size)
+        print("# gan type:", self.gan_type)
+        print("# dataset:", self.dataset_name)
+        print("# dataset number:", self.dataset_num)
+        print("# batch_size:", self.batch_size)
+        print("# epoch:", self.epoch)
+        print("# iteration per epoch:", self.iteration)
 
         print()
 
         print("##### Generator #####")
-        print("# spectral normalization : ", self.sn)
-        print("# learning rate : ", self.g_learning_rate)
+        print("# spectral normalization:", self.sn)
+        print("# learning rate:", self.g_learning_rate)
 
         print()
 
         print("##### Discriminator #####")
-        print("# the number of critic : ", self.n_critic)
-        print("# spectral normalization : ", self.sn)
-        print("# learning rate : ", self.d_learning_rate)
+        print("# discriminator updates per generator update:", self.n_critic)
+        print("# spectral normalization:", self.sn)
+        print("# learning rate:", self.d_learning_rate)
 
     ##################################################################################
     # Generator
@@ -93,43 +99,36 @@ class BigGAN_128(object):
 
     def generator(self, z, is_training=True, reuse=False):
         with tf.variable_scope("generator", reuse=reuse):
-            # 6
-            if self.z_dim == 128:
-                split_dim = 20
-                split_dim_remainder = self.z_dim - (split_dim * 5)
+            split_dim = self.z_dim // self.depth
+            z_split = tf.split(z, num_or_size_splits=[split_dim] * self.depth, axis=-1)
 
-                z_split = tf.split(z, num_or_size_splits=[split_dim] * 5 + [split_dim_remainder], axis=-1)
+            if   self.img_size==64: block_info={"counts": [1, 1, 1, 1], "sa_index": 3}
+            elif self.img_size==128: block_info={"counts": [1, 1, 1, 1, 1], "sa_index": 4}
+            elif self.img_size==256: block_info={"counts": [1, 2, 1, 1, 1], "sa_index": 4}
+            elif self.img_size==512: block_info={"counts": [1, 2, 1, 1, 2], "sa_index": 3}
+            else: raise ValueError("Invalid image size specified: "+str(self.img_size))
 
-            else:
-                split_dim = self.z_dim // 6
-                split_dim_remainder = self.z_dim - (split_dim * 6)
+            ch_mul = 2**(len(block_info["counts"])-1)
+            ch=ch_mul*self.ch
+            x=fully_conneted(z_split[0], units=4*4*ch, sn=self.sn, scope='dense')
+            x=tf.reshape(x, shape=[-1, 4, 4, ch])
 
-                if split_dim_remainder == 0 :
-                    z_split = tf.split(z, num_or_size_splits=[split_dim] * 6, axis=-1)
-                else :
-                    z_split = tf.split(z, num_or_size_splits=[split_dim] * 5 + [split_dim_remainder], axis=-1)
+            z_i = 1
+            b_i = 0
 
+            for block_count in block_info["counts"]:
+                scope='resblock_up_'+str(ch_mul)
+                for sb_i in range(block_count):
+                    if block_count>1: scope=scope+'_'+str(sb_i)
+                    x=resblock_up_condition(x, z_split[z_i], channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope=scope)
+                    z_i+=1
 
-            ch = 16 * self.ch
-            x = fully_conneted(z_split[0], units=4 * 4 * ch, sn=self.sn, scope='dense')
-            x = tf.reshape(x, shape=[-1, 4, 4, ch])
+                b_i+=1
+                if b_i==block_info["sa_index"]:
+                    x=self_attention_2(x, channels=ch, sn=self.sn, scope='self_attention')
 
-            x = resblock_up_condition(x, z_split[1], channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_up_16')
-            ch = ch // 2
-
-            x = resblock_up_condition(x, z_split[2], channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_up_8')
-            ch = ch // 2
-
-            x = resblock_up_condition(x, z_split[3], channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_up_4')
-            ch = ch // 2
-
-            x = resblock_up_condition(x, z_split[4], channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_up_2')
-
-            # Non-Local Block
-            x = self_attention_2(x, channels=ch, sn=self.sn, scope='self_attention')
-            ch = ch // 2
-
-            x = resblock_up_condition(x, z_split[5], channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_up_1')
+                ch=ch//2
+                ch_mul=ch_mul//2
 
             x = batch_norm(x, is_training)
             x = relu(x)
@@ -147,22 +146,29 @@ class BigGAN_128(object):
         with tf.variable_scope("discriminator", reuse=reuse):
             ch = self.ch
 
-            x = resblock_down(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_down_1')
+            if   self.img_size==64: block_info={"counts": [1, 1, 1, 1], "sa_index": 1}
+            elif self.img_size==128: block_info={"counts": [1, 1, 1, 1, 1], "sa_index": 1}
+            elif self.img_size==256: block_info={"counts": [1, 1, 1, 2, 1], "sa_index": 2}
+            elif self.img_size==512: block_info={"counts": [1, 2, 1, 1, 2], "sa_index": 2}
+            else: raise ValueError("Invalid image size specified: "+str(self.img_size))
 
-            # Non-Local Block
-            x = self_attention_2(x, channels=ch, sn=self.sn, scope='self_attention')
-            ch = ch * 2
 
-            x = resblock_down(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_down_2')
-            ch = ch * 2
+            b_i=0
+            ch_mul=1
+            for block_count in block_info["counts"]:
+                scope='resblock_down_'+str(ch_mul)
+                for sb_i in range(block_count):
+                    if block_count>1: scope=scope+'_'+str(sb_i)
+                    x=resblock_down(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope=scope)
 
-            x = resblock_down(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_down_4')
-            ch = ch * 2
+                b_i+=1
+                if b_i==block_info["sa_index"]:
+                    x=self_attention_2(x, channels=ch, sn=self.sn, scope='self_attention')
 
-            x = resblock_down(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_down_8')
-            ch = ch * 2
+                ch=ch*2
+                ch_mul=ch_mul*2
 
-            x = resblock_down(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock_down_16')
+            ch=ch//2  # last layer has same width as previous one
 
             x = resblock(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock')
             x = relu(x)

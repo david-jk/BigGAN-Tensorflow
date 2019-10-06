@@ -1,6 +1,4 @@
-from BigGAN_512 import BigGAN_512
-from BigGAN_256 import BigGAN_256
-from BigGAN_128 import BigGAN_128
+from BigGAN import BigGAN
 import argparse
 from utils import *
 
@@ -100,14 +98,8 @@ def main():
 
     # open session
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-        # default gan = BigGAN_128
 
-        if args.img_size == 512 :
-            gan = BigGAN_512(sess, args)
-        elif args.img_size == 256 :
-            gan = BigGAN_256(sess, args)
-        else :
-            gan = BigGAN_128(sess, args)
+        gan = BigGAN(sess, args)
 
         # build graph
         gan.build_model()
