@@ -325,7 +325,11 @@ class BigGAN(object):
 
                 sys.stdout.flush()
 
-                # save training results for every 300 steps
+                # save training results every X steps
+                if np.mod(idx + 1, self.save_freq) == 0:
+                    self.save(self.checkpoint_dir, counter)
+
+                # generate samples every X steps
                 if np.mod(idx + 1, self.print_freq) == 0:
                     samples = self.sess.run(self.fake_images)
                     tot_num_samples = min(self.sample_num, self.batch_size)
@@ -335,9 +339,6 @@ class BigGAN(object):
                                 [manifold_h, manifold_w],
                                 './' + self.sample_dir + '/' + self.model_name + '_train_{:02d}_{:05d}.png'.format(
                                     epoch, idx + 1))
-
-                if np.mod(idx + 1, self.save_freq) == 0:
-                    self.save(self.checkpoint_dir, counter)
 
             # After an epoch, start_batch_id is set to zero
             # non-zero value is only for the first epoch after loading pre-trained model
