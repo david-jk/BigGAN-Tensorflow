@@ -30,7 +30,7 @@ weight_regularizer_fully = orthogonal_regularizer_fully(0.0001)
 
 # pad = ceil[ (kernel - stride) / 2 ]
 
-def conv(x, channels, opt, kernel=4, stride=2, pad=0, pad_type='zero', use_bias=True, scope='conv_0'):
+def conv(x, channels, opt, kernel=4, stride=2, pad=0, pad_type='reflect', use_bias=True, scope='conv_0'):
     with tf.variable_scope(scope) as full_scope:
         if pad > 0:
             h = x.get_shape().as_list()[1]
@@ -161,6 +161,11 @@ def upconv(x, channels, opt, use_bias=True):
         return deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
     elif opt["upsampling_method"] == 'deconv_4':
         return deconv(x, channels, kernel=4, stride=2, use_bias=use_bias, opt=opt)
+    elif opt["upsampling_method"] == 'resize_conv':
+        x = up_sample(x, 2)
+        x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
+        return x
+
     else: raise ValueError("Invalid upsampling method specified: "+str(opt["upsampling_method"]))
 
 def resblock_up(x_init, channels, opt, use_bias=True, scope='resblock_up'):
