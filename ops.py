@@ -30,7 +30,7 @@ weight_regularizer_fully = orthogonal_regularizer_fully(0.0001)
 
 # pad = ceil[ (kernel - stride) / 2 ]
 
-def conv(x, channels, kernel=4, stride=2, pad=0, pad_type='zero', use_bias=True, sn=False, scope='conv_0'):
+def conv(x, channels, opt, kernel=4, stride=2, pad=0, pad_type='zero', use_bias=True, scope='conv_0'):
     with tf.variable_scope(scope):
         if pad > 0:
             h = x.get_shape().as_list()[1]
@@ -49,7 +49,7 @@ def conv(x, channels, kernel=4, stride=2, pad=0, pad_type='zero', use_bias=True,
             if pad_type == 'reflect' :
                 x = tf.pad(x, [[0, 0], [pad_top, pad_bottom], [pad_left, pad_right], [0, 0]], mode='REFLECT')
 
-        if sn :
+        if opt["sn"]:
             if scope.__contains__('generator') :
                 w = tf.get_variable("kernel", shape=[kernel, kernel, x.get_shape()[-1], channels], initializer=weight_init,
                                     regularizer=weight_regularizer)
@@ -79,7 +79,7 @@ def conv(x, channels, kernel=4, stride=2, pad=0, pad_type='zero', use_bias=True,
         return x
 
 
-def deconv(x, channels, kernel=4, stride=2, padding='SAME', use_bias=True, sn=False, scope='deconv_0'):
+def deconv(x, channels, opt, kernel=4, stride=2, padding='SAME', use_bias=True, scope='deconv_0'):
     with tf.variable_scope(scope):
         x_shape = x.get_shape().as_list()
 
@@ -87,9 +87,9 @@ def deconv(x, channels, kernel=4, stride=2, padding='SAME', use_bias=True, sn=Fa
             output_shape = [x_shape[0], x_shape[1] * stride, x_shape[2] * stride, channels]
 
         else:
-            output_shape =[x_shape[0], x_shape[1] * stride + max(kernel - stride, 0), x_shape[2] * stride + max(kernel - stride, 0), channels]
+            output_shape = [x_shape[0], x_shape[1] * stride + max(kernel - stride, 0), x_shape[2] * stride + max(kernel - stride, 0), channels]
 
-        if sn :
+        if opt["sn"]:
             w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init, regularizer=weight_regularizer)
             x = tf.nn.conv2d_transpose(x, filter=spectral_norm(w), output_shape=output_shape, strides=[1, stride, stride, 1], padding=padding)
 
@@ -104,13 +104,13 @@ def deconv(x, channels, kernel=4, stride=2, padding='SAME', use_bias=True, sn=Fa
 
         return x
 
-def fully_conneted(x, units, use_bias=True, sn=False, scope='fully_0'):
+def fully_connected(x, units, opt, use_bias=True, scope='fully_0'):
     with tf.variable_scope(scope):
         x = flatten(x)
         shape = x.get_shape().as_list()
         channels = shape[-1]
 
-        if sn :
+        if opt["sn"]:
             if scope.__contains__('generator'):
                 w = tf.get_variable("kernel", [channels, units], tf.float32, initializer=weight_init, regularizer=weight_regularizer_fully)
             else :
@@ -143,79 +143,79 @@ def hw_flatten(x) :
 # Residual-block, Self-Attention-block
 ##################################################################################
 
-def resblock(x_init, channels, use_bias=True, is_training=True, sn=False, scope='resblock'):
+def resblock(x_init, channels, opt, use_bias=True, scope='resblock'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
-            x = conv(x_init, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, sn=sn)
-            x = batch_norm(x, is_training)
+            x = conv(x_init, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
+            x = batch_norm(x, opt=opt)
             x = relu(x)
 
         with tf.variable_scope('res2'):
-            x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, sn=sn)
-            x = batch_norm(x, is_training)
+            x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
+            x = batch_norm(x, opt=opt)
 
         return x + x_init
 
-def resblock_up(x_init, channels, use_bias=True, is_training=True, sn=False, scope='resblock_up'):
+def resblock_up(x_init, channels, opt, use_bias=True, scope='resblock_up'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
-            x = batch_norm(x_init, is_training)
+            x = batch_norm(x_init, opt=opt)
             x = relu(x)
-            x = deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, sn=sn)
+            x = deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('res2') :
-            x = batch_norm(x, is_training)
+            x = batch_norm(x, opt=opt)
             x = relu(x)
-            x = deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, sn=sn)
+            x = deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
-            x_init = deconv(x_init, channels, kernel=3, stride=2, use_bias=use_bias, sn=sn)
+            x_init = deconv(x_init, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
 
 
     return x + x_init
 
-def resblock_up_condition(x_init, z, channels, use_bias=True, is_training=True, sn=False, scope='resblock_up'):
+def resblock_up_condition(x_init, z, channels, opt, use_bias=True, scope='resblock_up'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
-            x = condition_batch_norm(x_init, z, is_training)
+            x = condition_batch_norm(x_init, z, opt=opt)
             x = relu(x)
-            x = deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, sn=sn)
+            x = deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('res2') :
-            x = condition_batch_norm(x, z, is_training)
+            x = condition_batch_norm(x, z, opt=opt)
             x = relu(x)
-            x = deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, sn=sn)
+            x = deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
-            x_init = deconv(x_init, channels, kernel=3, stride=2, use_bias=use_bias, sn=sn)
+            x_init = deconv(x_init, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
 
 
     return x + x_init
 
 
-def resblock_down(x_init, channels, use_bias=True, is_training=True, sn=False, scope='resblock_down'):
+def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
-            x = batch_norm(x_init, is_training)
+            x = batch_norm(x_init, opt=opt)
             x = relu(x)
-            x = conv(x, channels, kernel=3, stride=2, pad=1, use_bias=use_bias, sn=sn)
+            x = conv(x, channels, kernel=3, stride=2, pad=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('res2') :
-            x = batch_norm(x, is_training)
+            x = batch_norm(x, opt=opt)
             x = relu(x)
-            x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, sn=sn)
+            x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
-            x_init = conv(x_init, channels, kernel=3, stride=2, pad=1, use_bias=use_bias, sn=sn)
+            x_init = conv(x_init, channels, kernel=3, stride=2, pad=1, use_bias=use_bias, opt=opt)
 
 
     return x + x_init
 
-def self_attention(x, channels, sn=False, scope='self_attention'):
+def self_attention(x, channels, opt, scope='self_attention'):
     with tf.variable_scope(scope):
-        f = conv(x, channels // 8, kernel=1, stride=1, sn=sn, scope='f_conv')  # [bs, h, w, c']
-        g = conv(x, channels // 8, kernel=1, stride=1, sn=sn, scope='g_conv')  # [bs, h, w, c']
-        h = conv(x, channels, kernel=1, stride=1, sn=sn, scope='h_conv')  # [bs, h, w, c]
+        f = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='f_conv')  # [bs, h, w, c']
+        g = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='g_conv')  # [bs, h, w, c']
+        h = conv(x, channels, kernel=1, stride=1, opt=opt, scope='h_conv')  # [bs, h, w, c]
 
         # N = h * w
         s = tf.matmul(hw_flatten(g), hw_flatten(f), transpose_b=True)  # # [bs, N, N]
@@ -230,14 +230,14 @@ def self_attention(x, channels, sn=False, scope='self_attention'):
 
     return x
 
-def self_attention_2(x, channels, sn=False, scope='self_attention'):
+def self_attention_2(x, channels, opt, scope='self_attention'):
     with tf.variable_scope(scope):
-        f = conv(x, channels // 8, kernel=1, stride=1, sn=sn, scope='f_conv')  # [bs, h, w, c']
+        f = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='f_conv')  # [bs, h, w, c']
         f = max_pooling(f)
 
-        g = conv(x, channels // 8, kernel=1, stride=1, sn=sn, scope='g_conv')  # [bs, h, w, c']
+        g = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='g_conv')  # [bs, h, w, c']
 
-        h = conv(x, channels // 2, kernel=1, stride=1, sn=sn, scope='h_conv')  # [bs, h, w, c]
+        h = conv(x, channels // 2, kernel=1, stride=1, opt=opt, scope='h_conv')  # [bs, h, w, c]
         h = max_pooling(h)
 
         # N = h * w
@@ -249,7 +249,7 @@ def self_attention_2(x, channels, sn=False, scope='self_attention'):
         gamma = tf.get_variable("gamma", [1], initializer=tf.constant_initializer(0.0))
 
         o = tf.reshape(o, shape=[x.shape[0], x.shape[1], x.shape[2], channels // 2])  # [bs, h, w, C]
-        o = conv(o, channels, kernel=1, stride=1, sn=sn, scope='attn_conv')
+        o = conv(o, channels, kernel=1, stride=1, opt=opt, scope='attn_conv')
         x = gamma * o + x
 
     return x
@@ -296,14 +296,14 @@ def tanh(x):
 # Normalization function
 ##################################################################################
 
-def batch_norm(x, is_training=True, scope='batch_norm'):
+def batch_norm(x, opt, scope='batch_norm'):
     return tf.layers.batch_normalization(x,
                                          momentum=0.9,
                                          epsilon=1e-05,
-                                         training=is_training,
+                                         training=opt["is_training"],
                                          name=scope)
 
-def condition_batch_norm(x, z, is_training=True, scope='batch_norm'):
+def condition_batch_norm(x, z, opt, scope='batch_norm'):
     with tf.variable_scope(scope) :
         _, _, _, c = x.get_shape().as_list()
         decay = 0.9
@@ -312,13 +312,13 @@ def condition_batch_norm(x, z, is_training=True, scope='batch_norm'):
         test_mean = tf.get_variable("pop_mean", shape=[c], dtype=tf.float32, initializer=tf.constant_initializer(0.0), trainable=False)
         test_var = tf.get_variable("pop_var", shape=[c], dtype=tf.float32, initializer=tf.constant_initializer(1.0), trainable=False)
 
-        beta = fully_conneted(z, units=c, scope='beta')
-        gamma = fully_conneted(z, units=c, scope='gamma')
+        beta = fully_connected(z, units=c, scope='beta', opt=opt)
+        gamma = fully_connected(z, units=c, scope='gamma', opt=opt)
 
         beta = tf.reshape(beta, shape=[-1, 1, 1, c])
         gamma = tf.reshape(gamma, shape=[-1, 1, 1, c])
 
-        if is_training:
+        if opt["is_training"]:
             batch_mean, batch_var = tf.nn.moments(x, [0, 1, 2])
             ema_mean = tf.assign(test_mean, test_mean * decay + batch_mean * (1 - decay))
             ema_var = tf.assign(test_var, test_var * decay + batch_var * (1 - decay))

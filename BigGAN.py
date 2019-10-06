@@ -99,6 +99,10 @@ class BigGAN(object):
     ##################################################################################
 
     def generator(self, z, is_training=True, reuse=False):
+
+        opt={"sn": self.sn,
+             "is_training": is_training}
+
         with tf.variable_scope("generator", reuse=reuse):
             split_dim = self.z_dim // self.depth
             z_split = tf.split(z, num_or_size_splits=[split_dim] * self.depth, axis=-1)
@@ -111,7 +115,7 @@ class BigGAN(object):
 
             ch_mul = 2**(len(block_info["counts"])-1)
             ch=ch_mul*self.ch
-            x=fully_conneted(z_split[0], units=4*4*ch, sn=self.sn, scope='dense')
+            x=fully_connected(z_split[0], units=4*4*ch, scope='dense', opt=opt)
             x=tf.reshape(x, shape=[-1, 4, 4, ch])
 
             z_i = 1
@@ -121,19 +125,19 @@ class BigGAN(object):
                 scope='resblock_up_'+str(ch_mul)
                 for sb_i in range(block_count):
                     if block_count>1: scope=scope+'_'+str(sb_i)
-                    x=resblock_up_condition(x, z_split[z_i], channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope=scope)
+                    x=resblock_up_condition(x, z_split[z_i], channels=ch, use_bias=False, opt=opt, scope=scope)
                     z_i+=1
 
                 b_i+=1
                 if b_i==block_info["sa_index"]:
-                    x=self_attention_2(x, channels=ch, sn=self.sn, scope='self_attention')
+                    x=self_attention_2(x, channels=ch, opt=opt, scope='self_attention')
 
                 ch=ch//2
                 ch_mul=ch_mul//2
 
-            x = batch_norm(x, is_training)
+            x = batch_norm(x, opt=opt)
             x = relu(x)
-            x = conv(x, channels=self.c_dim, kernel=3, stride=1, pad=1, use_bias=False, sn=self.sn, scope='G_logit')
+            x = conv(x, channels=self.c_dim, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='G_logit')
 
             x = tanh(x)
 
@@ -144,6 +148,10 @@ class BigGAN(object):
     ##################################################################################
 
     def discriminator(self, x, is_training=True, reuse=False):
+
+        opt = {"sn": self.sn,
+               "is_training": is_training}
+
         with tf.variable_scope("discriminator", reuse=reuse):
             ch = self.ch
 
@@ -160,23 +168,23 @@ class BigGAN(object):
                 scope='resblock_down_'+str(ch_mul)
                 for sb_i in range(block_count):
                     if block_count>1: scope=scope+'_'+str(sb_i)
-                    x=resblock_down(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope=scope)
+                    x=resblock_down(x, channels=ch, use_bias=False, opt=opt, scope=scope)
 
                 b_i+=1
                 if b_i==block_info["sa_index"]:
-                    x=self_attention_2(x, channels=ch, sn=self.sn, scope='self_attention')
+                    x=self_attention_2(x, channels=ch, opt=opt, scope='self_attention')
 
                 ch=ch*2
                 ch_mul=ch_mul*2
 
             ch=ch//2  # last layer has same width as previous one
 
-            x = resblock(x, channels=ch, use_bias=False, is_training=is_training, sn=self.sn, scope='resblock')
+            x = resblock(x, channels=ch, use_bias=False, opt=opt, scope='resblock')
             x = relu(x)
 
             x = global_sum_pooling(x)
 
-            x = fully_conneted(x, units=1, sn=self.sn, scope='D_logit')
+            x = fully_connected(x, units=1, opt=opt, scope='D_logit')
 
             return x
 
