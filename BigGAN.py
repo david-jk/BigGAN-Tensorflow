@@ -351,10 +351,16 @@ class BigGAN(object):
 
                 # generate samples every X steps
                 if np.mod(idx + 1, self.print_freq) == 0:
-                    samples = self.sess.run(self.fake_images)
-                    tot_num_samples = min(self.sample_num, self.batch_size)
-                    manifold_h = int(np.floor(np.sqrt(tot_num_samples)))
-                    manifold_w = int(np.floor(np.sqrt(tot_num_samples)))
+                    manifold_h = int(np.floor(np.sqrt(self.sample_num)))
+                    manifold_w = int(np.floor(np.sqrt(self.sample_num)))
+                    tot_num_samples = manifold_w * manifold_h
+
+                    batches = int(np.ceil(tot_num_samples/self.batch_size))
+                    for b in range(batches):
+                        batch = self.sess.run(self.fake_images)
+                        if b==0: samples = batch
+                        else: samples = np.append(samples, batch, axis=0)
+
                     save_images(samples[:manifold_h * manifold_w, :, :, :],
                                 [manifold_h, manifold_w],
                                 './' + self.sample_dir + '/' + self.model_name + '_train_{:02d}_{:05d}.png'.format(
