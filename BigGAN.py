@@ -24,6 +24,7 @@ class BigGAN(object):
         self.save_freq = args.save_freq
         self.img_size = args.img_size
         self.depth = args.img_size.bit_length()-2
+        self.save_morphs = args.save_morphs
 
         """ Generator """
         self.ch = args.ch
@@ -308,16 +309,20 @@ class BigGAN(object):
         # for test
         self.fake_images = self.generator(self.test_z, is_training=False, reuse=True)
 
+        if self.static_sample_z or self.save_morphs:
+            self.sample_z = tf.placeholder(tf.float32, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
+            self.z_generator = self.generator(self.sample_z, reuse=True, is_training=False)
+
         if self.static_sample_z:
             if self.z_trunc_sample:
                 self.sample_z_val = self.sess.run(tf.random.truncated_normal(shape=[max(self.sample_num, self.batch_size), 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
             else:
                 self.sample_z_val = self.sess.run(tf.random.normal(shape=[max(self.sample_num, self.batch_size), 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
-
-            self.sample_z = tf.placeholder(tf.float32, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
-            self.sample_fake_images = self.generator(self.sample_z, reuse=True, is_training=False)
+            self.sample_fake_images = self.z_generator
         else:
             self.sample_fake_images = self.fake_images
+
+
 
         """ Summary """
         self.d_sum = tf.summary.scalar("d_loss", self.d_loss)
@@ -402,6 +407,27 @@ class BigGAN(object):
                                 './' + self.sample_dir + '/' + self.model_name + '_train_{:02d}_{:05d}.png'.format(
                                     epoch, idx + 1))
 
+                    if self.save_morphs:
+                        z_a = self.sample_z_val[np.random.randint(self.sample_num)]
+                        z_b = self.sample_z_val[np.random.randint(self.sample_num)]
+                        z_c = self.sample_z_val[np.random.randint(self.sample_num)]
+                        z_d = self.sample_z_val[np.random.randint(self.sample_num)]
+
+                        morph_padding = 1
+                        inter_z_flat = []
+                        for x in range(-morph_padding, manifold_w + morph_padding):
+                            rx = x / (manifold_w - 1)
+                            for y in range(-morph_padding, manifold_h + morph_padding):
+                                ry = y / (manifold_h - 1)
+                                inter_z_flat.append(z_a * (1 - rx) * (1 - ry) + z_b * (rx) * (1 - ry) + z_c * (1 - rx) * (ry) + z_b * (rx) * (ry))
+
+                        samples = self.generate(inter_z_flat)
+
+                        save_images(samples[:(manifold_h+morph_padding*2) * (manifold_w+morph_padding*2), :, :, :],
+                                    [manifold_h+morph_padding*2, manifold_w+morph_padding*2],
+                                    './' + self.sample_dir + '/' + self.model_name + '_morph_{:02d}_{:05d}.png'.format(
+                                        epoch, idx + 1))
+
             # After an epoch, start_batch_id is set to zero
             # non-zero value is only for the first epoch after loading pre-trained model
             start_batch_id = 0
@@ -483,3 +509,22 @@ class BigGAN(object):
             save_images(samples[:image_frame_dim * image_frame_dim, :, :, :],
                         [image_frame_dim, image_frame_dim],
                         result_dir + '/' + self.model_name + '_test_{}.png'.format(i))
+
+
+    def generate(self, zv):
+
+        zvc = zv.copy()
+        while len(zvc) % self.batch_size != 0:
+            zvc.append(zvc[0])
+
+        batches = int(np.ceil(len(zvc) / self.batch_size))
+        for b in range(batches):
+            batch = self.sess.run(self.z_generator, feed_dict={
+                self.sample_z: zvc[b * self.batch_size:(b + 1) * self.batch_size]})
+            if b == 0:
+                samples = batch
+            else:
+                samples = np.append(samples, batch, axis=0)
+
+        if len(zvc)==len(zv): return samples
+        else: return samples[:len(zv)]
