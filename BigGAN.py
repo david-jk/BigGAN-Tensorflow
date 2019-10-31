@@ -555,7 +555,7 @@ class BigGAN(object):
                                 ry = y / (manifold_h - 1)
                                 inter_z_flat.append(z_a * (1 - rx) * (1 - ry) + z_b * (rx) * (1 - ry) + z_c * (1 - rx) * (ry) + z_d * (rx) * (ry))
 
-                                if inter_cz_flat:
+                                if self.acgan:
                                     inter_cz_flat.append(cz_a * (1 - rx) * (1 - ry) + cz_b * (rx) * (1 - ry) + cz_c * (1 - rx) * (ry) + cz_d * (rx) * (ry))
 
                         samples = self.generate(inter_z_flat, inter_cz_flat)
