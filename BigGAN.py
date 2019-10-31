@@ -1,10 +1,10 @@
 import sys
 import time
+import random
 from ops import *
 from utils import *
 from tensorflow.contrib.data import prefetch_to_device, shuffle_and_repeat, map_and_batch
 from tensorflow.contrib.opt import MovingAverageOptimizer
-
 
 class BigGAN(object):
 
@@ -25,6 +25,15 @@ class BigGAN(object):
         self.img_size = args.img_size
         self.depth = args.img_size.bit_length()-2
         self.save_morphs = args.save_morphs
+        self.n_labels = args.n_labels
+        self.acgan = self.n_labels>0
+        self.label_file = args.label_file
+        self.g_first_level_dense_layer = args.g_first_level_dense_layer
+
+        if self.acgan:
+            self.d_cls_loss_weight = args.d_cls_loss_weight
+            self.g_cls_loss_weight = args.g_cls_loss_weight
+            self.save_cls_samples = args.save_cls_samples
 
         """ Generator """
         self.ch = args.ch
@@ -73,7 +82,7 @@ class BigGAN(object):
 
         else:
             self.c_dim = 3
-            self.data = load_data(dataset_name=self.dataset_name)
+            self.data, self.labels = load_data(dataset_name=self.dataset_name, label_file=self.label_file)
             self.custom_dataset = True
 
         self.dataset_num = len(self.data)
@@ -109,22 +118,30 @@ class BigGAN(object):
     # Generator
     ##################################################################################
 
+    def round_up(self, val, multiple):
+        return (int(val) + multiple - 1) // multiple * multiple
+
     def scale_channels(self, ch, factor):
-        return (int(ch * factor) + 7) // 8 * 8
+        return self.round_up(int(ch * factor),8)
 
     def g_channels_for_block(self, b_i, b_count):
         return self.scale_channels(self.ch,self.g_grow_factor**(b_count-b_i-1))
 
 
-    def generator(self, z, is_training=True, reuse=False):
+    def generator(self, z, cls_z, is_training=True, reuse=False, custom_getter=None):
 
         opt = {"sn": self.sn,
                "is_training": is_training,
                "upsampling_method": self.upsampling_method}
 
-        with tf.variable_scope("generator", reuse=reuse):
+        with tf.variable_scope("generator", reuse=reuse, custom_getter=custom_getter):
             split_dim = self.z_dim // self.depth
             z_split = tf.split(z, num_or_size_splits=[split_dim] * self.depth, axis=-1)
+
+            if self.acgan:
+                scls_z = tf.reshape(cls_z, shape=[-1, 1, 1, self.n_labels])
+                for i in range(len(z_split)):
+                    z_split[i]=tf.concat([z_split[i],scls_z],axis=-1)
 
             if   self.img_size==64: block_info={"counts": [1, 1, 1, 1], "sa_index": 3}
             elif self.img_size==128: block_info={"counts": [1, 1, 1, 1, 1], "sa_index": 4}
@@ -134,7 +151,13 @@ class BigGAN(object):
 
             ch_mul = 2**(len(block_info["counts"])-1)
             ch = self.g_channels_for_block(0, len(block_info["counts"]))
-            x=fully_connected(z_split[0], units=4*4*ch, scope='dense', opt=opt)
+
+            if self.g_first_level_dense_layer:
+                x=fully_connected(z_split[0], units=self.round_up((split_dim+self.n_labels)*1.85,8), scope='dense1', opt=opt)
+                x=relu(x)
+                x=fully_connected(x, units=4*4*ch, scope='dense2', opt=opt)
+            else: x=fully_connected(z_split[0], units=4*4*ch, scope='dense', opt=opt)
+
             x=tf.reshape(x, shape=[-1, 4, 4, ch])
 
             z_i = 1
@@ -205,11 +228,18 @@ class BigGAN(object):
             x = resblock(x, channels=ch, use_bias=False, opt=opt, scope='resblock')
             x = relu(x)
 
-            x = global_sum_pooling(x)
+            features = global_sum_pooling(x)
 
-            x = fully_connected(x, units=1, opt=opt, scope='D_logit')
 
-            return x
+            x = fully_connected(features, units=1, opt=opt, scope='D_logit')
+
+            if self.acgan:
+                opt["sn"]=False
+                y = fully_connected(features, units=self.n_labels, opt=opt, scope='DC_logit')
+
+                return x, y
+
+            else: return x
 
     def gradient_penalty(self, real, fake):
         if self.gan_type.__contains__('dragan'):
@@ -246,17 +276,22 @@ class BigGAN(object):
         """ Graph Input """
         # images
         Image_Data_Class = ImageData(self.img_size, self.c_dim, self.custom_dataset)
-        inputs = tf.data.Dataset.from_tensor_slices(self.data)
+        if self.acgan:
+            inputs = tf.data.Dataset.from_tensor_slices((self.data,self.labels))
+        else: inputs = tf.data.Dataset.from_tensor_slices(self.data)
 
         gpu_device = '/gpu:0'
         inputs = inputs.\
             apply(shuffle_and_repeat(self.dataset_num)).\
-            apply(map_and_batch(Image_Data_Class.image_processing, self.batch_size, num_parallel_batches=16, drop_remainder=True)).\
+            apply(map_and_batch(Image_Data_Class.image_processing_with_labels if self.acgan else Image_Data_Class.image_processing, self.batch_size, num_parallel_batches=16, drop_remainder=True)).\
             apply(prefetch_to_device(gpu_device, self.batch_size))
 
         inputs_iterator = inputs.make_one_shot_iterator()
 
-        self.inputs = inputs_iterator.get_next()
+        if self.acgan:
+            self.inputs, self.label_input = inputs_iterator.get_next()
+        else:
+            self.inputs = inputs_iterator.get_next()
 
         # noises
         if self.z_trunc_train:
@@ -274,22 +309,45 @@ class BigGAN(object):
 
         """ Loss Function """
         # output of D for real images
-        real_logits = self.discriminator(self.inputs)
+
+        if self.acgan:
+            real_logits, real_cls_logits = self.discriminator(self.inputs)
+            self.zero_cls_z = tf.zeros(shape=(self.batch_size,self.n_labels))
+            self.cls_z = tf.placeholder(tf.float32, [self.batch_size, self.n_labels], name='cls_z')
+        else:
+            real_logits = self.discriminator(self.inputs)
+            self.zero_cls_z = None
+            self.cls_z = None
 
         # output of D for fake images
-        fake_images = self.generator(self.z)
-        fake_logits = self.discriminator(fake_images, reuse=True)
+        fake_images = self.generator(self.z,self.cls_z)
+
+        if self.acgan:
+            fake_logits, fake_cls_logits = self.discriminator(fake_images, reuse=True)
+        else:
+            fake_logits = self.discriminator(fake_images, reuse=True)
 
         if self.gan_type.__contains__('wgan') or self.gan_type == 'dragan':
             GP = self.gradient_penalty(real=self.inputs, fake=fake_images)
         else:
             GP = 0
 
+        self.d_classification_loss = 0
+
+        if self.acgan:
+            self.d_classification_loss = self.d_cls_loss_weight * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.label_input,logits=real_cls_logits))
+
         # get loss for discriminator
-        self.d_loss = discriminator_loss(self.gan_type, real=real_logits, fake=fake_logits) + GP
+        self.d_loss = (discriminator_loss(self.gan_type, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss
+
+        self.g_classification_loss = 0
+
+        if self.acgan:
+            self.g_classification_loss = self.g_cls_loss_weight * tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(labels=self.cls_z, logits=fake_cls_logits))
 
         # get loss for generator
-        self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits)
+        self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss)
 
         """ Training """
         # divide trainable variables into a group for D and a group for G
@@ -300,25 +358,26 @@ class BigGAN(object):
         # optimizers
         with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
             self.d_optim = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2).minimize(self.d_loss, var_list=d_vars)
-
             self.opt = MovingAverageOptimizer(tf.train.AdamOptimizer(self.g_learning_rate, beta1=self.beta1, beta2=self.beta2), average_decay=self.moving_decay)
-
             self.g_optim = self.opt.minimize(self.g_loss, var_list=g_vars)
 
         """" Testing """
         # for test
-        self.fake_images = self.generator(self.test_z, is_training=False, reuse=True)
+        self.fake_images = self.generator(self.test_z, self.zero_cls_z, is_training=False, reuse=True)
 
         if self.static_sample_z or self.save_morphs:
             self.sample_z = tf.placeholder(tf.float32, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
-            self.z_generator = self.generator(self.sample_z, reuse=True, is_training=False)
+            self.z_generator = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False)
 
         if self.static_sample_z:
+            rounded_n = self.round_up(self.sample_num, self.batch_size)
             if self.z_trunc_sample:
-                self.sample_z_val = self.sess.run(tf.random.truncated_normal(shape=[max(self.sample_num, self.batch_size), 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
+                self.sample_z_val = self.sess.run(tf.random.truncated_normal(shape=[rounded_n, 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
             else:
-                self.sample_z_val = self.sess.run(tf.random.normal(shape=[max(self.sample_num, self.batch_size), 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
+                self.sample_z_val = self.sess.run(tf.random.normal(shape=[rounded_n, 1, 1, self.z_dim], name='sample_z_gen', seed=self.static_sample_seed))
+
             self.sample_fake_images = self.z_generator
+
         else:
             self.sample_fake_images = self.fake_images
 
@@ -327,6 +386,8 @@ class BigGAN(object):
         """ Summary """
         self.d_sum = tf.summary.scalar("d_loss", self.d_loss)
         self.g_sum = tf.summary.scalar("g_loss", self.g_loss)
+        self.dc_sum = tf.summary.scalar("d_cls_loss", self.d_classification_loss)
+        self.gc_sum = tf.summary.scalar("g_cls_loss", self.g_classification_loss)
 
     ##################################################################################
     # Train
@@ -348,6 +409,7 @@ class BigGAN(object):
             start_epoch = (int)(checkpoint_counter / self.iteration)
             start_batch_id = checkpoint_counter - start_epoch * self.iteration
             counter = checkpoint_counter
+
             print(" [*] Load SUCCESS")
         else:
             start_epoch = 0
@@ -358,27 +420,47 @@ class BigGAN(object):
         # loop for epoch
         start_time = time.time()
         past_g_loss = -1.
+        past_g_cls_loss = -1.
         for epoch in range(start_epoch, self.epoch):
             # get batch data
             for idx in range(start_batch_id, self.iteration):
 
                 # update D network
-                _, summary_str, d_loss = self.sess.run([self.d_optim, self.d_sum, self.d_loss])
-                self.writer.add_summary(summary_str, counter)
+                if self.acgan:
+                    _, summary_str, s2_str, d_loss, d_cls_loss = self.sess.run([self.d_optim, self.d_sum, self.dc_sum, self.d_loss, self.d_classification_loss],feed_dict={self.cls_z: self.draw_n_tags(self.batch_size)})
+                    self.writer.add_summary(summary_str, counter)
+                    self.writer.add_summary(s2_str, counter)
+                else:
+                    _, summary_str, d_loss = self.sess.run([self.d_optim, self.d_sum, self.d_loss])
+                    self.writer.add_summary(summary_str, counter)
 
                 # update G network
                 g_loss = None
+                g_cls_loss = None
                 if (counter - 1) % self.n_critic == 0:
-                    _, summary_str, g_loss = self.sess.run([self.g_optim, self.g_sum, self.g_loss])
-                    self.writer.add_summary(summary_str, counter)
-                    past_g_loss = g_loss
+                    if self.acgan:
+                        _, summary_str, s2_str, g_loss, g_cls_loss = self.sess.run([self.g_optim, self.g_sum, self.gc_sum, self.g_loss, self.g_classification_loss],feed_dict={self.cls_z: self.draw_n_tags(self.batch_size)})
+                        self.writer.add_summary(summary_str, counter)
+                        self.writer.add_summary(s2_str, counter)
+                        past_g_loss = g_loss
+                        past_g_cls_loss = g_cls_loss
+                    else:
+                        _, summary_str, g_loss = self.sess.run([self.g_optim, self.g_sum, self.g_loss])
+                        self.writer.add_summary(summary_str, counter)
+                        past_g_loss = g_loss
 
                 # display training status
                 counter += 1
                 if g_loss == None:
                     g_loss = past_g_loss
-                print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
-                      % (epoch, idx, self.iteration, time.time() - start_time, d_loss, g_loss))
+                    if self.acgan: g_cls_loss = past_g_cls_loss
+
+                if self.acgan:
+                    print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, d_cls_loss: %.8f, g_loss: %.8f, g_cls_loss: %.8f" \
+                          % (epoch, idx, self.iteration, time.time() - start_time, d_loss, d_cls_loss, g_loss, g_cls_loss))
+                else:
+                    print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
+                                  % (epoch, idx, self.iteration, time.time() - start_time, d_loss, g_loss))
 
                 sys.stdout.flush()
 
@@ -393,9 +475,18 @@ class BigGAN(object):
                     tot_num_samples = manifold_w * manifold_h
 
                     batches = int(np.ceil(tot_num_samples/self.batch_size))
+
                     for b in range(batches):
                         if self.static_sample_z:
-                            batch = self.sess.run(self.sample_fake_images, feed_dict={self.sample_z: self.sample_z_val[b*self.batch_size:(b+1)*self.batch_size]})
+
+                            feed_dict = {
+                                self.sample_z: self.sample_z_val[b * self.batch_size:(b + 1) * self.batch_size],
+                            }
+
+                            if self.acgan:
+                                feed_dict[self.cls_z] = self.sample_cls_z[b * self.batch_size:(b + 1) * self.batch_size]
+
+                            batch = self.sess.run(self.sample_fake_images, feed_dict=feed_dict)
                         else:
                             batch = self.sess.run(self.sample_fake_images)
 
@@ -408,25 +499,67 @@ class BigGAN(object):
                                     epoch, idx + 1))
 
                     if self.save_morphs:
-                        z_a = self.sample_z_val[np.random.randint(self.sample_num)]
-                        z_b = self.sample_z_val[np.random.randint(self.sample_num)]
-                        z_c = self.sample_z_val[np.random.randint(self.sample_num)]
-                        z_d = self.sample_z_val[np.random.randint(self.sample_num)]
+
+                        def select():
+                            ri=np.random.randint(self.sample_num)
+                            if self.acgan:
+                                return self.sample_z_val[ri], np.array(list(map(float,self.sample_cls_z[ri])))
+                            else:
+                                return self.sample_z_val[ri], None
+
+                        z_a, cz_a = select()
+                        z_b, cz_b = select()
+                        z_c, cz_c = select()
+                        z_d, cz_d = select()
 
                         morph_padding = 1
                         inter_z_flat = []
+                        inter_cz_flat = [] if self.acgan else None
                         for x in range(-morph_padding, manifold_w + morph_padding):
                             rx = x / (manifold_w - 1)
                             for y in range(-morph_padding, manifold_h + morph_padding):
                                 ry = y / (manifold_h - 1)
-                                inter_z_flat.append(z_a * (1 - rx) * (1 - ry) + z_b * (rx) * (1 - ry) + z_c * (1 - rx) * (ry) + z_b * (rx) * (ry))
+                                inter_z_flat.append(z_a * (1 - rx) * (1 - ry) + z_b * (rx) * (1 - ry) + z_c * (1 - rx) * (ry) + z_d * (rx) * (ry))
 
-                        samples = self.generate(inter_z_flat)
+                                if inter_cz_flat:
+                                    inter_cz_flat.append(cz_a * (1 - rx) * (1 - ry) + cz_b * (rx) * (1 - ry) + cz_c * (1 - rx) * (ry) + cz_d * (rx) * (ry))
+
+                        samples = self.generate(inter_z_flat, inter_cz_flat)
 
                         save_images(samples[:(manifold_h+morph_padding*2) * (manifold_w+morph_padding*2), :, :, :],
                                     [manifold_h+morph_padding*2, manifold_w+morph_padding*2],
                                     './' + self.sample_dir + '/' + self.model_name + '_morph_{:02d}_{:05d}.png'.format(
                                         epoch, idx + 1))
+
+                    if self.acgan and self.save_cls_samples:
+                        def select_by_tag(tag_index):
+                            x=0
+                            while True:
+                                ri=np.random.randint(len(self.labels))
+                                if x>=1000:
+                                    print("Warning: did not find any samples for tag index",tag_index,", picking at random")
+                                if self.labels[ri][tag_index]>0 or x>=1000:
+                                    return self.labels[ri]
+                                x+=1
+
+                        np.random.seed(epoch * self.iteration + idx)
+                        rti = np.random.randint(self.n_labels)
+
+                        z_flat = []
+                        cz_flat = []
+                        i = 0
+                        for x in range(manifold_w):
+                            for y in range(manifold_h):
+                                z_flat.append(self.sample_z_val[i])
+                                cz_flat.append(select_by_tag(rti))
+                                i+=1
+
+                        samples = self.generate(z_flat, cz_flat)
+
+                        save_images(samples[:(manifold_h) * (manifold_w), :, :, :],
+                                    [manifold_h, manifold_w],
+                                    './' + self.sample_dir + '/' + self.model_name + '_cls_{:02d}_{:05d}_{:03d}.png'.format(
+                                        epoch, idx + 1, rti))
 
             # After an epoch, start_batch_id is set to zero
             # non-zero value is only for the first epoch after loading pre-trained model
@@ -511,16 +644,20 @@ class BigGAN(object):
                         result_dir + '/' + self.model_name + '_test_{}.png'.format(i))
 
 
-    def generate(self, zv):
+    def generate(self, zv, cls_zv):
 
         zvc = zv.copy()
         while len(zvc) % self.batch_size != 0:
             zvc.append(zvc[0])
+            if cls_zv: cls_zv.append(cls_zv[0])
 
         batches = int(np.ceil(len(zvc) / self.batch_size))
         for b in range(batches):
-            batch = self.sess.run(self.z_generator, feed_dict={
-                self.sample_z: zvc[b * self.batch_size:(b + 1) * self.batch_size]})
+            feed_dict = {self.sample_z: zvc[b * self.batch_size:(b + 1) * self.batch_size]}
+            if cls_zv:
+                feed_dict[self.cls_z]=cls_zv[b * self.batch_size:(b + 1) * self.batch_size]
+
+            batch = self.sess.run(self.z_generator, feed_dict)
             if b == 0:
                 samples = batch
             else:
@@ -528,3 +665,10 @@ class BigGAN(object):
 
         if len(zvc)==len(zv): return samples
         else: return samples[:len(zv)]
+
+    def draw_n_tags(self, n):
+        tags=[]
+        for i in range(n):
+            ri=np.random.randint(len(self.labels))
+            tags.append(self.labels[ri])
+        return tags

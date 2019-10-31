@@ -2,6 +2,7 @@ import scipy.misc
 import numpy as np
 import os
 import imageio
+import csv
 from glob import glob
 
 import tensorflow as tf
@@ -28,6 +29,11 @@ class ImageData:
 
         return img
 
+    def image_processing_with_labels(self, filename, label):
+
+        img = self.image_processing(filename)
+        return img, label
+
 
 def load_mnist():
     (train_data, train_labels), (test_data, test_labels) = mnist.load_data()
@@ -42,16 +48,37 @@ def load_cifar10() :
 
     return x
 
-def load_data(dataset_name) :
+def read_labels(path):
+    labels={}
+    with open(path, 'r') as csvFile:
+        reader = csv.reader(csvFile, delimiter='\t', quotechar='"')
+
+        for row in reader:
+            filename = row.pop(0)
+            tags = list(map(float, row))
+            labels[filename] = tags
+
+    return labels
+
+def load_data(dataset_name, label_file) :
     if dataset_name == 'mnist' :
         x = load_mnist()
     elif dataset_name == 'cifar10' :
         x = load_cifar10()
     else :
-
         x = glob(os.path.join("./dataset", dataset_name, '*.*'))
 
-    return x
+    if label_file:
+        labels = read_labels(label_file)
+        used_labels = []
+        for full in x:
+            fn = os.path.basename(full)
+            if fn not in labels:
+                raise RuntimeError("No label found for file "+fn)
+            used_labels.append(labels[fn])
+    else: used_labels = None
+
+    return x, used_labels
 
 
 def preprocessing(x, size):
