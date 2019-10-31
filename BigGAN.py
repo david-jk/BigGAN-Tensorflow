@@ -395,6 +395,10 @@ class BigGAN(object):
             if self.generate_noema_samples:
                 self.sample_fake_images_noema = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False)
 
+            if self.acgan:
+                np.random.seed(self.static_sample_seed)
+                self.sample_cls_z = self.draw_n_tags(rounded_n)
+
         else:
             self.sample_fake_images = self.fake_images
 
