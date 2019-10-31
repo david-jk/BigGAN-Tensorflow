@@ -23,7 +23,7 @@ def parse_args():
 
     parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for Adam optimizer')
     parser.add_argument('--beta2', type=float, default=0.9, help='beta2 for Adam optimizer')
-    parser.add_argument('--moving_decay', type=float, default=0.9999, help='moving average decay for generator')
+    parser.add_argument('--moving_decay', type=float, default=0.999 , help='moving average decay for generator')
 
     parser.add_argument('--z_dim', type=int, default=256, help='Dimension of noise vector')
     parser.add_argument('--sn', type=str2bool, default=True, help='using spectral norm')
