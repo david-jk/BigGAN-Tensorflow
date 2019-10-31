@@ -34,6 +34,12 @@ class BigGAN(object):
             self.d_cls_loss_weight = args.d_cls_loss_weight
             self.g_cls_loss_weight = args.g_cls_loss_weight
             self.save_cls_samples = args.save_cls_samples
+            self.cls_loss_weight_file = args.cls_loss_weights
+            if self.cls_loss_weight_file:
+                self.cls_loss_weights = list(map(float, open(self.cls_loss_weight_file).read().split()))
+                if len(self.cls_loss_weights) != self.n_labels:
+                    raise ValueError('Number of class loss weights does not match n_labels ('+str(len(self.cls_loss_weights))+" vs. "+str(self.n_labels)+")")
+            else: self.cls_loss_weights = [1.0] * self.n_labels
 
         """ Generator """
         self.ch = args.ch
@@ -342,7 +348,8 @@ class BigGAN(object):
         self.d_classification_loss = 0
 
         if self.acgan:
-            self.d_classification_loss = self.d_cls_loss_weight * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.label_input,logits=real_cls_logits))
+            cls_weights = tf.constant(self.cls_loss_weights, dtype=tf.float32)
+            self.d_classification_loss = self.d_cls_loss_weight * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.label_input,logits=real_cls_logits)*cls_weights)
 
         # get loss for discriminator
         self.d_loss = (discriminator_loss(self.gan_type, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss
@@ -351,7 +358,7 @@ class BigGAN(object):
 
         if self.acgan:
             self.g_classification_loss = self.g_cls_loss_weight * tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(labels=self.cls_z, logits=fake_cls_logits))
+                tf.nn.sigmoid_cross_entropy_with_logits(labels=self.cls_z, logits=fake_cls_logits)*cls_weights)
 
         # get loss for generator
         self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss)
