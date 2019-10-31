@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument('--g_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the generator')
     parser.add_argument('--d_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the discriminator')
 
-    parser.add_argument('--gan_type', type=str, default='ra-hinge', help='[gan / lsgan / wgan-gp / wgan-lp / dragan / hinge / ra-hinge]')
+    parser.add_argument('--gan_type', type=str, default='ra-dragan', help='[gan / lsgan / wgan-gp / wgan-lp / dragan / hinge / ra-gan / ra-hinge / ra-dragan]')
     parser.add_argument('--ld', type=float, default=10.0, help='The gradient penalty lambda')
 
     parser.add_argument('--n_critic', type=int, default=1, help='The number of discriminator updates per generator update')

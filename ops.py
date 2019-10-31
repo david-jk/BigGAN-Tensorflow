@@ -393,7 +393,13 @@ def discriminator_loss(loss_func, real, fake):
         real_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(real), logits=real))
         fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake), logits=fake))
 
-    if loss_func == 'ra-hinge' :
+    if loss_func == 'ra-gan' or loss_func == 'ra-dragan':
+        d_xr = real - tf.reduce_mean(fake)
+        d_xf = fake - tf.reduce_mean(real)
+        real_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(real), logits=d_xr))
+        fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake), logits=d_xf))
+
+    if loss_func == 'ra-hinge':
         d_xr = real - tf.reduce_mean(fake)
         d_xf = fake - tf.reduce_mean(real)
         real_loss = tf.reduce_mean(relu(1.0 - d_xr))
@@ -418,6 +424,13 @@ def generator_loss(loss_func, fake, real):
 
     if loss_func == 'gan' or loss_func == 'dragan' :
         fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake), logits=fake))
+
+    if loss_func == 'ra-gan' or loss_func == 'ra-dragan':
+        d_xr = real - tf.reduce_mean(fake)
+        d_xf = fake - tf.reduce_mean(real)
+        fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake), logits=d_xf))
+        real_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(real), logits=d_xr))
+        fake_loss = fake_loss + real_loss
 
     if loss_func == 'ra-hinge':
         d_xr = real - tf.reduce_mean(fake)
