@@ -62,6 +62,13 @@ class BigGAN(object):
         self.z_trunc_train = args.z_trunc_train
         self.z_trunc_sample = args.z_trunc_sample
         self.test_num = args.test_num
+        self.sample_ema = args.sample_ema
+
+        if self.sample_ema not in ['ema', 'noema', 'both']:
+            raise ValueError('Invalid mode for sample_ema specified')
+
+        self.generate_noema_samples = self.sample_ema!='ema'
+        self.generate_ema_samples = self.sample_ema!='noema'
 
         # train
         self.g_learning_rate = args.g_lr
@@ -359,15 +366,22 @@ class BigGAN(object):
         with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
             self.d_optim = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2).minimize(self.d_loss, var_list=d_vars)
             self.opt = MovingAverageOptimizer(tf.train.AdamOptimizer(self.g_learning_rate, beta1=self.beta1, beta2=self.beta2), average_decay=self.moving_decay)
+            ema = self.opt._ema
             self.g_optim = self.opt.minimize(self.g_loss, var_list=g_vars)
 
         """" Testing """
         # for test
-        self.fake_images = self.generator(self.test_z, self.zero_cls_z, is_training=False, reuse=True)
+
+        def ema_getter(getter, name, *args, **kwargs):
+            var = getter(name, *args, **kwargs)
+            ema_var = ema.average(var) if ema else None
+            return ema_var if ema_var else var
+
+        self.fake_images = self.generator(self.test_z, self.zero_cls_z, is_training=False, reuse=True, custom_getter=ema_getter)
 
         if self.static_sample_z or self.save_morphs:
             self.sample_z = tf.placeholder(tf.float32, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
-            self.z_generator = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False)
+            self.z_generator = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False, custom_getter=ema_getter)
 
         if self.static_sample_z:
             rounded_n = self.round_up(self.sample_num, self.batch_size)
@@ -378,8 +392,14 @@ class BigGAN(object):
 
             self.sample_fake_images = self.z_generator
 
+            if self.generate_noema_samples:
+                self.sample_fake_images_noema = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False)
+
         else:
             self.sample_fake_images = self.fake_images
+
+            if self.generate_noema_samples:
+                self.sample_fake_images_noema = self.generator(self.test_z, self.zero_cls_z, is_training=False, reuse=True)
 
 
 
@@ -476,27 +496,37 @@ class BigGAN(object):
 
                     batches = int(np.ceil(tot_num_samples/self.batch_size))
 
-                    for b in range(batches):
-                        if self.static_sample_z:
+                    def generate_with(gen):
+                        for b in range(batches):
+                            if self.static_sample_z:
 
-                            feed_dict = {
-                                self.sample_z: self.sample_z_val[b * self.batch_size:(b + 1) * self.batch_size],
-                            }
+                                feed_dict = {
+                                    self.sample_z: self.sample_z_val[b * self.batch_size:(b + 1) * self.batch_size],
+                                }
 
-                            if self.acgan:
-                                feed_dict[self.cls_z] = self.sample_cls_z[b * self.batch_size:(b + 1) * self.batch_size]
+                                if self.acgan:
+                                    feed_dict[self.cls_z] = self.sample_cls_z[b * self.batch_size:(b + 1) * self.batch_size]
 
-                            batch = self.sess.run(self.sample_fake_images, feed_dict=feed_dict)
-                        else:
-                            batch = self.sess.run(self.sample_fake_images)
+                                batch = self.sess.run(gen, feed_dict=feed_dict)
+                            else:
+                                batch = self.sess.run(gen)
 
-                        if b==0: samples = batch
-                        else: samples = np.append(samples, batch, axis=0)
+                            if b==0: samples = batch
+                            else: samples = np.append(samples, batch, axis=0)
 
-                    save_images(samples[:manifold_h * manifold_w, :, :, :],
-                                [manifold_h, manifold_w],
-                                './' + self.sample_dir + '/' + self.model_name + '_train_{:02d}_{:05d}.png'.format(
-                                    epoch, idx + 1))
+                        return samples
+
+                    if self.generate_ema_samples:
+                        save_images(generate_with(self.sample_fake_images)[:manifold_h * manifold_w, :, :, :],
+                                    [manifold_h, manifold_w],
+                                    './' + self.sample_dir + '/' + self.model_name + '_ema_{:02d}_{:05d}.png'.format(
+                                        epoch, idx + 1))
+
+                    if self.generate_noema_samples:
+                        save_images(generate_with(self.sample_fake_images_noema)[:manifold_h * manifold_w, :, :, :],
+                                    [manifold_h, manifold_w],
+                                    './' + self.sample_dir + '/' + self.model_name + '_noema_{:02d}_{:05d}.png'.format(
+                                        epoch, idx + 1))
 
                     if self.save_morphs:
 
