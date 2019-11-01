@@ -20,6 +20,7 @@ class BigGAN(object):
         self.epoch = args.epoch
         self.iteration = args.iteration
         self.batch_size = args.batch_size
+        self.virtual_batches = args.virtual_batches
         self.print_freq = args.print_freq
         self.save_freq = args.save_freq
         self.img_size = args.img_size
@@ -370,11 +371,34 @@ class BigGAN(object):
         g_vars = [var for var in t_vars if 'generator' in var.name]
 
         # optimizers
-        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-            self.d_optim = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2).minimize(self.d_loss, var_list=d_vars)
-            self.opt = MovingAverageOptimizer(tf.train.AdamOptimizer(self.g_learning_rate, beta1=self.beta1, beta2=self.beta2), average_decay=self.moving_decay)
+        if self.virtual_batches > 1:
+
+            self.d_opt = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2)
+
+            self.opt = MovingAverageOptimizer(
+                tf.train.AdamOptimizer(self.g_learning_rate, beta1=self.beta1, beta2=self.beta2),
+                average_decay=self.moving_decay)
             ema = self.opt._ema
-            self.g_optim = self.opt.minimize(self.g_loss, var_list=g_vars)
+
+            def virtual_batch_steps(opt, loss, vars):
+                grad_factor = tf.constant(1.0/self.virtual_batches)
+                acc_vars = [tf.Variable(tf.zeros_like(v.read_value()), trainable=False, collections=[tf.GraphKeys.LOCAL_VARIABLES]) for v in vars]
+                with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                    zero_ops = [v.assign(tf.zeros_like(v)) for v in acc_vars]
+                grads = opt.compute_gradients(loss, var_list=vars)
+                acc_ops = [acc_vars[i].assign_add(gv[0]) for i, gv in enumerate(grads)]
+                step = opt.apply_gradients([(acc_vars[i]*grad_factor, gv[1]) for i, gv in enumerate(grads)])
+                return zero_ops, acc_ops, step
+
+            self.g_zero_step, self.g_acc_steps, self.g_train_step = virtual_batch_steps(self.opt, self.g_loss, g_vars)
+            self.d_zero_step, self.d_acc_steps, self.d_train_step = virtual_batch_steps(self.d_opt, self.d_loss, d_vars)
+
+        else:
+            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                self.d_optim = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2).minimize(self.d_loss, var_list=d_vars)
+                self.opt = MovingAverageOptimizer(tf.train.AdamOptimizer(self.g_learning_rate, beta1=self.beta1, beta2=self.beta2), average_decay=self.moving_decay)
+                ema = self.opt._ema
+                self.g_optim = self.opt.minimize(self.g_loss, var_list=g_vars)
 
         """" Testing """
         # for test
@@ -458,11 +482,45 @@ class BigGAN(object):
 
                 # update D network
                 if self.acgan:
-                    _, summary_str, s2_str, d_loss, d_cls_loss = self.sess.run([self.d_optim, self.d_sum, self.dc_sum, self.d_loss, self.d_classification_loss],feed_dict={self.cls_z: self.draw_n_tags(self.batch_size)})
+
+                    if self.virtual_batches > 1:
+
+                        self.sess.run(self.d_zero_step,feed_dict=self.rnd_cls_feed_dict())
+
+                        d_loss = 0
+                        d_cls_loss = 0
+                        for i in range(self.virtual_batches):
+                            summary_str, s2_str, loss, cls_loss, *_ = self.sess.run([self.d_sum, self.dc_sum, self.d_loss, self.d_classification_loss] + self.d_acc_steps,feed_dict=self.rnd_cls_feed_dict())
+                            d_loss += loss
+                            d_cls_loss += cls_loss
+
+                        self.sess.run(self.d_train_step)
+
+                        d_loss /= self.virtual_batches
+                        d_cls_loss /= self.virtual_batches
+
+                    else:
+                        _, summary_str, s2_str, d_loss, d_cls_loss = self.sess.run([self.d_optim, self.d_sum, self.dc_sum, self.d_loss, self.d_classification_loss],feed_dict=self.rnd_cls_feed_dict())
+
                     self.writer.add_summary(summary_str, counter)
                     self.writer.add_summary(s2_str, counter)
                 else:
-                    _, summary_str, d_loss = self.sess.run([self.d_optim, self.d_sum, self.d_loss])
+                    if self.virtual_batches>1:
+
+                        self.sess.run(self.d_zero_step)
+
+                        d_loss = 0
+                        for i in range(self.virtual_batches):
+                            summary_str, loss, *_ = self.sess.run([self.d_sum, self.d_loss] + self.d_acc_steps)
+                            d_loss += loss
+
+                        self.sess.run(self.d_train_step)
+
+                        d_loss /= self.virtual_batches
+
+                    else:
+                        _, summary_str, d_loss = self.sess.run([self.d_optim, self.d_sum, self.d_loss])
+
                     self.writer.add_summary(summary_str, counter)
 
                 # update G network
@@ -470,13 +528,44 @@ class BigGAN(object):
                 g_cls_loss = None
                 if (counter - 1) % self.n_critic == 0:
                     if self.acgan:
-                        _, summary_str, s2_str, g_loss, g_cls_loss = self.sess.run([self.g_optim, self.g_sum, self.gc_sum, self.g_loss, self.g_classification_loss],feed_dict={self.cls_z: self.draw_n_tags(self.batch_size)})
+                        if self.virtual_batches > 1:
+
+                            self.sess.run(self.g_zero_step,feed_dict=self.rnd_cls_feed_dict())
+
+                            g_loss = 0
+                            g_cls_loss = 0
+                            for i in range(self.virtual_batches):
+                                summary_str, s2_str, loss, cls_loss, *_ = self.sess.run([self.g_sum, self.gc_sum, self.g_loss, self.g_classification_loss] + self.g_acc_steps,feed_dict=self.rnd_cls_feed_dict())
+                                g_loss += loss
+                                g_cls_loss += cls_loss
+
+                            self.sess.run(self.g_train_step)
+
+                            g_loss /= self.virtual_batches
+                            g_cls_loss /= self.virtual_batches
+                        else:
+                            _, summary_str, s2_str, g_loss, g_cls_loss = self.sess.run([self.g_optim, self.g_sum, self.gc_sum, self.g_loss, self.g_classification_loss],feed_dict=self.rnd_cls_feed_dict())
+
                         self.writer.add_summary(summary_str, counter)
                         self.writer.add_summary(s2_str, counter)
                         past_g_loss = g_loss
                         past_g_cls_loss = g_cls_loss
                     else:
-                        _, summary_str, g_loss = self.sess.run([self.g_optim, self.g_sum, self.g_loss])
+                        if self.virtual_batches > 1:
+
+                            self.sess.run(self.g_zero_step)
+
+                            g_loss = 0
+                            for i in range(self.virtual_batches):
+                                loss, summary_str, *_ = self.sess.run([self.g_sum, self.g_loss]+self.g_acc_steps)
+                                g_loss += loss
+
+                            self.sess.run(self.g_train_step)
+
+                            g_loss /= self.virtual_batches
+                        else:
+                            _, summary_str, g_loss = self.sess.run([self.g_optim, self.g_sum, self.g_loss])
+
                         self.writer.add_summary(summary_str, counter)
                         past_g_loss = g_loss
 
@@ -713,3 +802,6 @@ class BigGAN(object):
             ri=np.random.randint(len(self.labels))
             tags.append(self.labels[ri])
         return tags
+
+    def rnd_cls_feed_dict(self):
+        return {self.cls_z: self.draw_n_tags(self.batch_size)}

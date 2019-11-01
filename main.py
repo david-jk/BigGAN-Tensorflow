@@ -12,6 +12,7 @@ def parse_args():
     parser.add_argument('--epoch', type=int, default=50, help='The number of epochs to run')
     parser.add_argument('--iteration', type=int, default=10000, help='The number of training iterations')
     parser.add_argument('--batch_size', type=int, default=16, help='The size of batch per gpu')
+    parser.add_argument('--virtual_batches', type=int, default=1, help='number of gradient accumulations per step')
     parser.add_argument('--ch', type=int, default=64, help='base channel number per layer')
     parser.add_argument('--d_ch', type=int, default=0, help='base channel number per layer in discriminator')
 
