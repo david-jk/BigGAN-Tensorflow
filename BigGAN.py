@@ -53,6 +53,7 @@ class BigGAN(object):
             print("Warning: z_dim must be divisible by ",self.depth,", changing to ",self.z_dim)
 
         self.gan_type = args.gan_type
+        self.d_loss_func = args.d_loss_func if args.d_loss_func else self.gan_type
 
         """ Discriminator """
         self.n_critic = args.n_critic
@@ -127,6 +128,8 @@ class BigGAN(object):
         print("# discriminator updates per generator update:", self.n_critic)
         print("# spectral normalization:", self.sn)
         print("# learning rate:", self.d_learning_rate)
+        if self.gan_type != self.d_loss_func:
+            print("# discriminator loss:", self.d_loss_func)
 
     ##################################################################################
     # Generator
@@ -353,7 +356,7 @@ class BigGAN(object):
             self.d_classification_loss = self.d_cls_loss_weight * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.label_input,logits=real_cls_logits)*cls_weights)
 
         # get loss for discriminator
-        self.d_loss = (discriminator_loss(self.gan_type, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss
+        self.d_loss = (discriminator_loss(self.d_loss_func, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss
 
         self.g_classification_loss = 0
 
