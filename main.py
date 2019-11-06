@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument('--moving_decay', type=float, default=0.999 , help='moving average decay for generator')
 
     parser.add_argument('--z_dim', type=int, default=256, help='Dimension of noise vector')
+    parser.add_argument('--first_split_ratio', type=int, default=3, help='ratio of z values assigned to the first layer')
     parser.add_argument('--z_reconstruct', type=str2bool, default=False, help='train the discriminator to reconstruct z')
     parser.add_argument('--sn', type=str2bool, default=True, help='using spectral norm')
     parser.add_argument('--bn_in_d', type=str2bool, default=False, help='whether to use BN in the discriminator')

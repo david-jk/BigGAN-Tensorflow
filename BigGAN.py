@@ -48,7 +48,8 @@ class BigGAN(object):
         self.g_grow_factor = args.g_grow_factor
 
         self.z_dim = args.z_dim  # dimension of noise-vector
-        if self.z_dim%self.depth!=0:
+        self.first_split_ratio = args.first_split_ratio
+        if self.z_dim%self.depth!=0 and self.first_split_ratio==1:
             self.z_dim=self.z_dim + self.depth - self.z_dim%self.depth
             print("Warning: z_dim must be divisible by ",self.depth,", changing to ",self.z_dim)
         self.z_reconstruct = args.z_reconstruct
@@ -158,8 +159,14 @@ class BigGAN(object):
                "upsampling_method": self.upsampling_method}
 
         with tf.variable_scope("generator", reuse=reuse, custom_getter=custom_getter):
-            split_dim = self.z_dim // self.depth
-            z_split = tf.split(z, num_or_size_splits=[split_dim] * self.depth, axis=-1)
+            if self.first_split_ratio>1:
+                split_dim = self.z_dim // (self.depth - 1 + self.first_split_ratio)
+                first_split_dim = self.z_dim - (self.depth - 1) * split_dim
+            else:
+                split_dim = self.z_dim // self.depth
+                first_split_dim = split_dim
+
+            z_split = tf.split(z, num_or_size_splits=[first_split_dim] + ([split_dim] * (self.depth - 1)), axis=-1)
 
             if self.acgan:
                 scls_z = tf.reshape(cls_z, shape=[-1, 1, 1, self.n_labels])
@@ -176,7 +183,7 @@ class BigGAN(object):
             ch = self.g_channels_for_block(0, len(block_info["counts"]))
 
             if self.g_first_level_dense_layer:
-                x=fully_connected(z_split[0], units=self.round_up((split_dim+self.n_labels)*1.85,8), scope='dense1', opt=opt)
+                x=fully_connected(z_split[0], units=self.round_up((first_split_dim+self.n_labels)*1.85,8), scope='dense1', opt=opt)
                 x=relu(x)
                 x=fully_connected(x, units=4*4*ch, scope='dense2', opt=opt)
             else: x=fully_connected(z_split[0], units=4*4*ch, scope='dense', opt=opt)
