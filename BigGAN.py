@@ -51,9 +51,15 @@ class BigGAN(object):
         if self.z_dim%self.depth!=0:
             self.z_dim=self.z_dim + self.depth - self.z_dim%self.depth
             print("Warning: z_dim must be divisible by ",self.depth,", changing to ",self.z_dim)
+        self.z_reconstruct = args.z_reconstruct
 
         self.gan_type = args.gan_type
         self.d_loss_func = args.d_loss_func if args.d_loss_func else self.gan_type
+
+        self.use_gradient_penalty = self.gan_type.__contains__('wgan') or self.gan_type == 'dragan'
+
+        if self.use_gradient_penalty and self.z_reconstruct:
+            raise ValueError('Z reconstruction is currently not supported when gradient penalty is used (WGAN and DRAGAN)')
 
         """ Discriminator """
         self.n_critic = args.n_critic
@@ -250,13 +256,27 @@ class BigGAN(object):
 
             x = fully_connected(features, units=1, opt=opt, scope='D_logit')
 
+            outputs = {"real": x}
+
             if self.acgan:
                 opt["sn"]=False
                 y = fully_connected(features, units=self.n_labels, opt=opt, scope='DC_logit')
+                outputs["cls"] = y
 
-                return x, y
+            if self.z_reconstruct:
+                opt["sn"] = False
+                y = fully_connected(features, units=self.z_dim, opt=opt, scope='z_reconstruct')
 
-            else: return x
+                branch = fully_connected(features, units=self.scale_channels(self.z_dim,1.5), opt=opt, scope='z_reconstruct_res1')
+                branch = batch_norm(branch, opt)
+                branch = relu(branch)
+                branch = fully_connected(branch, units=self.z_dim, opt=opt, scope='z_reconstruct_res2')
+
+                y = y + branch
+
+                outputs["z"] = y
+
+            return outputs
 
     def gradient_penalty(self, real, fake):
         if self.gan_type.__contains__('dragan'):
@@ -269,7 +289,7 @@ class BigGAN(object):
         alpha = tf.random_uniform(shape=[self.batch_size, 1, 1, 1], minval=0., maxval=1.)
         interpolated = real + alpha * (fake - real)
 
-        logit = self.discriminator(interpolated, reuse=True)
+        logit = self.discriminator(interpolated, reuse=True)["real"]
 
         grad = tf.gradients(logit, interpolated)[0]  # gradient of D(interpolated)
         grad_norm = tf.norm(flatten(grad), axis=1)  # l2 norm
@@ -327,36 +347,46 @@ class BigGAN(object):
         """ Loss Function """
         # output of D for real images
 
+        d_outputs_real = self.discriminator(self.inputs)
+        real_logits = d_outputs_real["real"]
+
         if self.acgan:
-            real_logits, real_cls_logits = self.discriminator(self.inputs)
+            real_cls_logits = d_outputs_real["cls"]
             self.zero_cls_z = tf.zeros(shape=(self.batch_size,self.n_labels))
             self.cls_z = tf.placeholder(tf.float32, [self.batch_size, self.n_labels], name='cls_z')
         else:
-            real_logits = self.discriminator(self.inputs)
             self.zero_cls_z = None
             self.cls_z = None
 
         # output of D for fake images
         fake_images = self.generator(self.z,self.cls_z)
+        d_outputs_fake = self.discriminator(fake_images, reuse=True)
+        fake_logits = d_outputs_fake["real"]
 
         if self.acgan:
-            fake_logits, fake_cls_logits = self.discriminator(fake_images, reuse=True)
-        else:
-            fake_logits = self.discriminator(fake_images, reuse=True)
+            fake_cls_logits = d_outputs_fake["cls"]
 
-        if self.gan_type.__contains__('wgan') or self.gan_type == 'dragan':
+        if self.z_reconstruct:
+            self.reconstructed_z = tf.reshape(d_outputs_fake["z"], shape=[-1, 1, 1, self.z_dim])
+
+        if self.use_gradient_penalty:
             GP = self.gradient_penalty(real=self.inputs, fake=fake_images)
         else:
             GP = 0
 
         self.d_classification_loss = 0
+        self.z_reconstruct_loss = 0
 
         if self.acgan:
             cls_weights = tf.constant(self.cls_loss_weights, dtype=tf.float32)
             self.d_classification_loss = self.d_cls_loss_weight * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.label_input,logits=real_cls_logits)*cls_weights)
 
+        if self.z_reconstruct:
+            loss_f = tf.constant(1.0/self.z_dim)
+            self.z_reconstruct_loss = tf.norm(self.z - self.reconstructed_z, ord='euclidean') * loss_f
+
         # get loss for discriminator
-        self.d_loss = (discriminator_loss(self.d_loss_func, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss
+        self.d_loss = (discriminator_loss(self.d_loss_func, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss + (self.z_reconstruct_loss*5.0)
 
         self.g_classification_loss = 0
 
@@ -365,7 +395,7 @@ class BigGAN(object):
                 tf.nn.sigmoid_cross_entropy_with_logits(labels=self.cls_z, logits=fake_cls_logits)*cls_weights)
 
         # get loss for generator
-        self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss)
+        self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss) + (self.z_reconstruct_loss*5.0)
 
         """ Training """
         # divide trainable variables into a group for D and a group for G
