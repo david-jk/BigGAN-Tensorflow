@@ -597,7 +597,7 @@ class BigGAN(object):
 
                             g_loss = 0
                             for i in range(self.virtual_batches):
-                                loss, summary_str, *_ = self.sess.run([self.g_sum, self.g_loss]+self.g_acc_steps)
+                                summary_str, loss, *_ = self.sess.run([self.g_sum, self.g_loss]+self.g_acc_steps)
                                 g_loss += loss
 
                             self.sess.run(self.g_train_step)
