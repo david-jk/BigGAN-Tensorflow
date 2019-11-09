@@ -301,6 +301,12 @@ def lrelu(x, alpha=0.2):
 def relu(x):
     return tf.nn.relu(x)
 
+def prelu(x, scope=None, init_val=0.0):
+    with tf.variable_scope(name_or_scope=scope, default_name="prelu"):
+        alphas = tf.get_variable('alpha', x.get_shape()[-1], initializer=tf.constant_initializer(init_val), dtype=tf.float32)
+        pos = tf.nn.relu(x)
+        neg = alphas * (x - abs(x)) * 0.5
+        return pos + neg
 
 def tanh(x):
     return tf.tanh(x)

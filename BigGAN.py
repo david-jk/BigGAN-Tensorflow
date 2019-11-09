@@ -30,6 +30,9 @@ class BigGAN(object):
         self.acgan = self.n_labels>0
         self.label_file = args.label_file
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
+        self.g_final_layer = args.g_final_layer
+        if self.g_final_layer:
+            self.depth += 1
 
         if self.acgan:
             self.d_cls_loss_weight = args.d_cls_loss_weight
@@ -209,7 +212,21 @@ class BigGAN(object):
 
             x = batch_norm(x, opt=opt)
             x = relu(x)
-            x = conv(x, channels=self.c_dim, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='G_logit')
+
+            if self.g_final_layer:
+                with tf.variable_scope('final'):
+                    final_channels = self.scale_channels(self.ch, 0.5)
+                    final = fully_connected(z_split[self.depth - 1], units=split_dim * 2, scope='dense', opt=opt)
+                    final = relu(final)
+                    final = fully_connected(final, units=final_channels, scope='dense2', opt=opt)
+                    final = tf.reshape(final, shape=[-1, 1, 1, final_channels])
+                    x = conv(x, channels=final_channels, kernel=3, stride=1, pad=1, use_bias=False, opt=opt)
+                    x = x * final
+                    x = prelu(x)
+                x = conv(x, channels=self.c_dim, kernel=1, stride=1, pad=0, use_bias=False, opt=opt, scope='G_logit')
+
+            else:
+                x = conv(x, channels=self.c_dim, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='G_logit')
 
             x = tanh(x)
 
