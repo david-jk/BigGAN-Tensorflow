@@ -448,9 +448,9 @@ class BigGAN(object):
             def virtual_batch_steps(opt, loss, vars):
                 grad_factor = tf.constant(1.0/self.virtual_batches)
                 acc_vars = [tf.Variable(tf.zeros_like(v.read_value()), trainable=False, collections=[tf.GraphKeys.LOCAL_VARIABLES]) for v in vars]
+                zero_ops = [v.assign(tf.zeros_like(v)) for v in acc_vars]
                 with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-                    zero_ops = [v.assign(tf.zeros_like(v)) for v in acc_vars]
-                grads = opt.compute_gradients(loss, var_list=vars)
+                    grads = opt.compute_gradients(loss, var_list=vars)
                 acc_ops = [acc_vars[i].assign_add(gv[0]) for i, gv in enumerate(grads)]
                 step = opt.apply_gradients([(acc_vars[i]*grad_factor, gv[1]) for i, gv in enumerate(grads)])
                 return zero_ops, acc_ops, step
