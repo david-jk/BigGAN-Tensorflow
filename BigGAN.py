@@ -31,8 +31,12 @@ class BigGAN(object):
         self.label_file = args.label_file
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
         self.g_final_layer = args.g_final_layer
+        self.g_final_mixed_conv = args.g_final_mixed_conv
         if self.g_final_layer:
             self.depth += 1
+
+        if self.g_final_mixed_conv and not self.g_final_layer:
+            raise ValueError("g_final_mixed_conv set, but not g_final_layer")
 
         if self.acgan:
             self.d_cls_loss_weight = args.d_cls_loss_weight
@@ -220,6 +224,10 @@ class BigGAN(object):
                     final = relu(final)
                     final = fully_connected(final, units=final_channels, scope='dense2', opt=opt)
                     final = tf.reshape(final, shape=[-1, 1, 1, final_channels])
+
+                    if self.g_final_mixed_conv:
+                        x = clown_conv(x, self.ch, opt=opt)
+                        x = clown_conv(x, self.ch, scope="clown2", opt=opt)
                     x = conv(x, channels=final_channels, kernel=3, stride=1, pad=1, use_bias=False, opt=opt)
                     x = x * final
                     x = prelu(x)

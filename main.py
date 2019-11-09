@@ -54,6 +54,7 @@ def parse_args():
     parser.add_argument('--label_file', type=str, default='', help='label file, required if n_labels>0')
     parser.add_argument('--g_first_level_dense_layer', type=str2bool, default=True, help='adds an extra dense layer between the z inputs and the 4x4 layer')
     parser.add_argument('--g_final_layer', type=str2bool, default=False, help='adds a z-powered layer in the generator before the RGB output')
+    parser.add_argument('--g_final_mixed_conv', type=str2bool, default=False, help='adds experimental mixed convolutions in the final generator layer')
     parser.add_argument('--d_cls_loss_weight', type=float, default=5.0, help='factor for classification loss in the descriminator')
     parser.add_argument('--g_cls_loss_weight', type=float, default=1.0, help='factor for classification loss in the generator')
     parser.add_argument('--save_cls_samples', type=str2bool, default=False, help='when generating samples, additionally generates a set of samples for a random class')

@@ -30,7 +30,7 @@ weight_regularizer_fully = orthogonal_regularizer_fully(0.0001)
 
 # pad = ceil[ (kernel - stride) / 2 ]
 
-def conv(x, channels, opt, kernel=4, stride=2, pad=0, pad_type='reflect', use_bias=True, scope='conv_0'):
+def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, pad_type='reflect', use_bias=True, scope='conv_0'):
     with tf.variable_scope(scope) as full_scope:
         if pad > 0:
             h = x.get_shape().as_list()[1]
@@ -58,7 +58,7 @@ def conv(x, channels, opt, kernel=4, stride=2, pad=0, pad_type='reflect', use_bi
                                     regularizer=None)
 
             x = tf.nn.conv2d(input=x, filter=spectral_norm(w),
-                             strides=[1, stride, stride, 1], padding='VALID')
+                             strides=[1, stride, stride, 1], padding='VALID', dilations=dilation)
             if use_bias :
                 bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0))
                 x = tf.nn.bias_add(x, bias)
@@ -68,12 +68,12 @@ def conv(x, channels, opt, kernel=4, stride=2, pad=0, pad_type='reflect', use_bi
                 x = tf.layers.conv2d(inputs=x, filters=channels,
                                      kernel_size=kernel, kernel_initializer=weight_init,
                                      kernel_regularizer=weight_regularizer,
-                                     strides=stride, use_bias=use_bias)
+                                     strides=stride, use_bias=use_bias, dilations=dilation)
             else :
                 x = tf.layers.conv2d(inputs=x, filters=channels,
                                      kernel_size=kernel, kernel_initializer=weight_init,
                                      kernel_regularizer=None,
-                                     strides=stride, use_bias=use_bias)
+                                     strides=stride, use_bias=use_bias, dilations=dilation)
 
 
         return x
@@ -223,6 +223,28 @@ def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
 
 
     return x + x_init
+
+def clown_conv(x, channels, opt, use_bias=True, scope='clown'):
+
+    split_ch = channels//8
+    rest_split = channels - split_ch*7
+    deconv4_ch = split_ch + rest_split
+
+    with tf.variable_scope(scope):
+
+        deconv4 = deconv(x, deconv4_ch, kernel=4, stride=1, use_bias=use_bias, scope="deconv4", opt=opt)
+        deconv3 = deconv(x, split_ch * 2, kernel=3, stride=1, use_bias=use_bias, scope="deconv3", opt=opt)
+        deconv2 = deconv(x, split_ch, kernel=2, stride=1, use_bias=use_bias, scope="deconv2", opt=opt)
+        conv3 = conv(x, split_ch, kernel=3, stride=1, pad=1, use_bias=use_bias, scope="conv3", opt=opt)
+        conv5 = conv(x, split_ch, kernel=5, stride=1, pad=2, use_bias=use_bias, scope="conv5", opt=opt)
+        dilconv5 = conv(x, split_ch, kernel=5, stride=1, pad=4, dilation=2, use_bias=use_bias, scope="dilconv5", opt=opt)
+
+        concat = tf.concat([deconv4, deconv3, deconv2, conv3, conv5, dilconv5], axis=-1)
+        concat = batch_norm(concat, opt=opt)
+        concat = prelu(concat)
+
+        return concat
+
 
 def self_attention(x, channels, opt, scope='self_attention'):
     with tf.variable_scope(scope):
