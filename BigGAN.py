@@ -220,16 +220,30 @@ class BigGAN(object):
             if self.g_final_layer:
                 with tf.variable_scope('final'):
                     final_channels = self.scale_channels(self.ch, 0.5)
-                    final = fully_connected(z_split[self.depth - 1], units=split_dim * 2, scope='dense', opt=opt)
+
+                    use_bias = True
+
+                    if use_bias:
+                        zfi_ch = final_channels * 2
+                    else:
+                        zfi_ch = split_dim * 2
+                    final = fully_connected(z_split[self.depth - 1], units=zfi_ch, scope='dense', opt=opt)
                     final = relu(final)
-                    final = fully_connected(final, units=final_channels, scope='dense2', opt=opt)
-                    final = tf.reshape(final, shape=[-1, 1, 1, final_channels])
+                    final_scale = fully_connected(final, units=final_channels, scope='dense2', opt=opt)
+                    final_scale = tf.reshape(final_scale, shape=[-1, 1, 1, final_channels])
+
+                    if use_bias:
+                        final_bias = fully_connected(final, units=final_channels, scope='dense_bias', opt=opt)
+                        final_bias = tf.reshape(final_bias, shape=[-1, 1, 1, final_channels])
 
                     if self.g_final_mixed_conv:
                         x = clown_conv(x, self.ch, opt=opt)
                         x = clown_conv(x, self.ch, scope="clown2", opt=opt)
                     x = conv(x, channels=final_channels, kernel=3, stride=1, pad=1, use_bias=False, opt=opt)
-                    x = x * final
+                    if use_bias:
+                        x = x * final_scale + final_bias
+                    else:
+                        x = x * final_scale
                     x = prelu(x)
                 x = conv(x, channels=self.c_dim, kernel=1, stride=1, pad=0, use_bias=False, opt=opt, scope='G_logit')
 
