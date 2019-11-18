@@ -447,6 +447,7 @@ class BigGAN(object):
 
         # get loss for generator
         self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss) + (self.z_reconstruct_loss*5.0)
+        self.g_loss = tf.add_n([self.g_loss] + tf.losses.get_regularization_losses())
 
         """ Training """
         # divide trainable variables into a group for D and a group for G
