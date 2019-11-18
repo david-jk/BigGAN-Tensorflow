@@ -31,6 +31,8 @@ def parse_args():
     parser.add_argument('--z_reconstruct', type=str2bool, default=False, help='train the discriminator to reconstruct z')
     parser.add_argument('--sn', type=str2bool, default=True, help='using spectral norm')
     parser.add_argument('--bn_in_d', type=str2bool, default=False, help='whether to use BN in the discriminator')
+    parser.add_argument('--g_regularization', type=str, default='ortho_cosine', help='[none, ortho, ortho_cosine, l2]')
+    parser.add_argument('--g_regularization_factor', type=float, default=0.0001, help='regularization weight for generator')
     parser.add_argument('--upsampling_method', type=str, default='deconv_4', help='[deconv_3 / deconv_4 / resize_conv]')
     parser.add_argument('--g_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the generator')
     parser.add_argument('--d_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the discriminator')

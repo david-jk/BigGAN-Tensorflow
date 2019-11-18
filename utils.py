@@ -155,7 +155,12 @@ def str2bool(x):
 # Regularization
 ##################################################################################
 
-def orthogonal_regularizer(scale) :
+def cosine_similarity(a, b):
+    norm_a = tf.nn.l2_normalize(a, 1)
+    norm_b = tf.nn.l2_normalize(b, 1)
+    return tf.matmul(norm_a, norm_b, transpose_b=True)
+
+def orthogonal_regularizer(scale, type='ortho') :
     """ Defining the Orthogonal regularizer and return the function at last to be used in Conv layer as kernel regularizer"""
 
     def ortho_reg(w) :
@@ -167,10 +172,14 @@ def orthogonal_regularizer(scale) :
         """ Declaring a Identity Tensor of appropriate size"""
         identity = tf.eye(c)
 
-        """ Regularizer Wt*W - I """
         w_transpose = tf.transpose(w)
         w_mul = tf.matmul(w_transpose, w)
-        reg = tf.subtract(w_mul, identity)
+        if type=='ortho':
+            reg = tf.subtract(w_mul, identity)
+        elif type=='ortho_cosine':
+            reg = cosine_similarity(w_mul, tf.ones(identity.get_shape()) - identity)
+        else:
+            raise ValueError("Unknown regularization method.")
 
         """Calculating the Loss Obtained"""
         ortho_loss = tf.nn.l2_loss(reg)
@@ -179,8 +188,7 @@ def orthogonal_regularizer(scale) :
 
     return ortho_reg
 
-def orthogonal_regularizer_fully(scale) :
-    """ Defining the Orthogonal regularizer and return the function at last to be used in Fully Connected Layer """
+def orthogonal_regularizer_fc(scale, type='ortho') :
 
     def ortho_reg_fully(w) :
         """ Reshaping the matrix in to 2D tensor for enforcing orthogonality"""
@@ -190,7 +198,12 @@ def orthogonal_regularizer_fully(scale) :
         identity = tf.eye(c)
         w_transpose = tf.transpose(w)
         w_mul = tf.matmul(w_transpose, w)
-        reg = tf.subtract(w_mul, identity)
+        if type=='ortho':
+            reg = tf.subtract(w_mul, identity)
+        elif type=='ortho_cosine':
+            reg = cosine_similarity(w_mul, tf.ones(identity.get_shape()) - identity)
+        else:
+            raise ValueError("Unknown regularization method.")
 
         """ Calculating the Loss """
         ortho_loss = tf.nn.l2_loss(reg)

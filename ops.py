@@ -1,5 +1,4 @@
 import tensorflow as tf
-from utils import orthogonal_regularizer_fully, orthogonal_regularizer
 
 ##################################################################################
 # Initialization
@@ -11,18 +10,7 @@ from utils import orthogonal_regularizer_fully, orthogonal_regularizer
 # Truncated_normal : tf.truncated_normal_initializer(mean=0.0, stddev=0.02)
 # Orthogonal : tf.orthogonal_initializer(1.0) / relu = sqrt(2), the others = 1.0
 
-##################################################################################
-# Regularization
-##################################################################################
-
-# l2_decay : tf_contrib.layers.l2_regularizer(0.0001)
-# orthogonal_regularizer : orthogonal_regularizer(0.0001) / orthogonal_regularizer_fully(0.0001)
-
 weight_init = tf.truncated_normal_initializer(mean=0.0, stddev=0.02)
-weight_regularizer = orthogonal_regularizer(0.0001)
-weight_regularizer_fully = orthogonal_regularizer_fully(0.0001)
-
-# Regularization only G in BigGAN
 
 ##################################################################################
 # Layer
@@ -52,7 +40,7 @@ def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, pad_type='refl
         if opt["sn"]:
             if 'generator' in full_scope.name:
                 w = tf.get_variable("kernel", shape=[kernel, kernel, x.get_shape()[-1], channels], initializer=weight_init,
-                                    regularizer=weight_regularizer)
+                                    regularizer=opt["conv_regularizer"])
             else :
                 w = tf.get_variable("kernel", shape=[kernel, kernel, x.get_shape()[-1], channels], initializer=weight_init,
                                     regularizer=None)
@@ -67,7 +55,7 @@ def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, pad_type='refl
             if 'generator' in full_scope.name:
                 x = tf.layers.conv2d(inputs=x, filters=channels,
                                      kernel_size=kernel, kernel_initializer=weight_init,
-                                     kernel_regularizer=weight_regularizer,
+                                     kernel_regularizer=opt["conv_regularizer"],
                                      strides=stride, use_bias=use_bias, dilations=dilation)
             else :
                 x = tf.layers.conv2d(inputs=x, filters=channels,
@@ -90,7 +78,7 @@ def deconv(x, channels, opt, kernel=4, stride=2, padding='SAME', use_bias=True, 
             output_shape = [x_shape[0], x_shape[1] * stride + max(kernel - stride, 0), x_shape[2] * stride + max(kernel - stride, 0), channels]
 
         if opt["sn"]:
-            w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init, regularizer=weight_regularizer)
+            w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init, regularizer=opt["conv_regularizer"])
             x = tf.nn.conv2d_transpose(x, filter=spectral_norm(w), output_shape=output_shape, strides=[1, stride, stride, 1], padding=padding)
 
             if use_bias :
@@ -99,7 +87,7 @@ def deconv(x, channels, opt, kernel=4, stride=2, padding='SAME', use_bias=True, 
 
         else :
             x = tf.layers.conv2d_transpose(inputs=x, filters=channels,
-                                           kernel_size=kernel, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
+                                           kernel_size=kernel, kernel_initializer=weight_init, kernel_regularizer=opt["conv_regularizer"],
                                            strides=stride, padding=padding, use_bias=use_bias)
 
         return x
@@ -112,7 +100,7 @@ def fully_connected(x, units, opt, use_bias=True, scope='fully_0'):
 
         if opt["sn"]:
             if 'generator' in full_scope.name:
-                w = tf.get_variable("kernel", [channels, units], tf.float32, initializer=weight_init, regularizer=weight_regularizer_fully)
+                w = tf.get_variable("kernel", [channels, units], tf.float32, initializer=weight_init, regularizer=opt["fc_regularizer"])
             else :
                 w = tf.get_variable("kernel", [channels, units], tf.float32, initializer=weight_init, regularizer=None)
 
@@ -126,7 +114,7 @@ def fully_connected(x, units, opt, use_bias=True, scope='fully_0'):
         else :
             if 'generator' in full_scope.name:
                 x = tf.layers.dense(x, units=units, kernel_initializer=weight_init,
-                                    kernel_regularizer=weight_regularizer_fully, use_bias=use_bias)
+                                    kernel_regularizer=opt["fc_regularizer"], use_bias=use_bias)
             else :
                 x = tf.layers.dense(x, units=units, kernel_initializer=weight_init,
                                     kernel_regularizer=None, use_bias=use_bias)

@@ -57,6 +57,8 @@ class BigGAN(object):
         self.ch = args.ch
         self.upsampling_method = args.upsampling_method
         self.g_grow_factor = args.g_grow_factor
+        self.g_regularization_method = args.g_regularization
+        self.g_regularization_factor = args.g_regularization_factor
 
         self.z_dim = args.z_dim  # dimension of noise-vector
         self.first_split_ratio = args.first_split_ratio
@@ -168,6 +170,25 @@ class BigGAN(object):
         opt = {"sn": self.sn,
                "is_training": is_training,
                "upsampling_method": self.upsampling_method}
+
+        if is_training:
+            if self.g_regularization_method=='none':
+                opt["conv_regularizer"]=None
+                opt["fc_regularizer"]=None
+            elif self.g_regularization_method=='ortho':
+                opt["conv_regularizer"]=orthogonal_regularizer(self.g_regularization_factor,type='ortho')
+                opt["fc_regularizer"]=orthogonal_regularizer_fc(self.g_regularization_factor,type='ortho')
+            elif self.g_regularization_method=='ortho_cosine':
+                opt["conv_regularizer"]=orthogonal_regularizer(self.g_regularization_factor,type='ortho_cosine')
+                opt["fc_regularizer"]=orthogonal_regularizer_fc(self.g_regularization_factor,type='ortho_cosine')
+            elif self.g_regularization_method=='l2':
+                opt["conv_regularizer"]=tf.contrib.layers.l2_regularizer(self.g_regularization_factor)
+                opt["fc_regularizer"]=tf.contrib.layers.l2_regularizer(self.g_regularization_factor)
+            else:
+                raise ValueError("Unknown regularization method: "+str(self.g_regularization_method))
+        else:
+            opt["conv_regularizer"]=None
+            opt["fc_regularizer"]=None
 
         with tf.variable_scope("generator", reuse=reuse, custom_getter=custom_getter):
             if self.first_split_ratio>1:
@@ -447,7 +468,8 @@ class BigGAN(object):
 
         # get loss for generator
         self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss) + (self.z_reconstruct_loss*5.0)
-        self.g_loss = tf.add_n([self.g_loss] + tf.losses.get_regularization_losses())
+        if self.g_regularization_method!='none':
+            self.g_loss = tf.add_n([self.g_loss] + tf.losses.get_regularization_losses())
 
         """ Training """
         # divide trainable variables into a group for D and a group for G
