@@ -16,6 +16,9 @@ class BigGAN(object):
         self.sample_dir = args.sample_dir
         self.result_dir = args.result_dir
         self.log_dir = args.log_dir
+        self.checkpoint = args.checkpoint
+        if args.phase == "service":
+            self.request_dir = args.request_dir
 
         self.epoch = args.epoch
         self.iteration = args.iteration
@@ -801,17 +804,25 @@ class BigGAN(object):
 
         self.saver.save(self.sess, os.path.join(checkpoint_dir, self.model_name + '.model'), global_step=step)
 
+
+    def load_checkpoint(self, checkpoint_path):
+        ckpt_name = os.path.basename(checkpoint_path)
+        self.saver.restore(self.sess, checkpoint_path)
+        counter = int(ckpt_name.split('-')[-1])
+        print(" [*] Successfully read {}".format(ckpt_name))
+        return True, counter
+
+
     def load(self, checkpoint_dir):
         print(" [*] Reading checkpoints...")
         checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
 
+        if self.checkpoint:
+            return self.load_checkpoint(self.checkpoint)
+
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
-            ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
-            self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
-            counter = int(ckpt_name.split('-')[-1])
-            print(" [*] Success to read {}".format(ckpt_name))
-            return True, counter
+            return self.load_checkpoint(ckpt.model_checkpoint_path)
         else:
             print(" [*] Failed to find a checkpoint")
             return False, 0
@@ -826,6 +837,61 @@ class BigGAN(object):
 
         save_images(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim],
                     self.sample_dir + '/' + self.model_name + '_epoch%02d' % epoch + '_visualize.png')
+
+
+    def service(self):
+        tf.global_variables_initializer().run()
+
+        #self.saver = tf.train.Saver()
+        self.saver = self.opt.swapping_saver()
+        could_load, checkpoint_counter = self.load(self.checkpoint_dir)
+        result_dir = os.path.join(self.result_dir, self.model_dir)
+        check_folder(result_dir)
+
+        if could_load:
+            print(" [*] Load SUCCESS")
+        else:
+            print(" [!] Load failed...")
+
+
+        while True:
+            files = [os.path.join(self.request_dir, f) for f in os.listdir(self.request_dir) if
+                     os.path.isfile(os.path.join(self.request_dir, f)) and f.lower().endswith('.txt')]
+
+            for f in files:
+                cmds, z_samples = read_vectors(f)
+
+                use_ema=True
+
+                if "quit" in cmds:
+                    os.remove(f)
+                    return
+
+                if "ema" in cmds:
+                    use_ema=cmds["ema"]=='1'
+
+                if "load_checkpoint" in cmds:
+                    self.load_checkpoint(cmds["load_checkpoint"])
+
+                cls_z = None
+
+                if self.acgan:
+                    cls_z = []
+                    for i, z in enumerate(z_samples):
+                        cls_z.append(z[self.z_dim:])
+                        z_samples[i] = z[:self.z_dim]
+
+                for i, z in enumerate(z_samples):
+                    z_samples[i] = [[z]]
+                samples = self.generate(z_samples, cls_z, ema=use_ema)
+                out_path = os.path.join(self.request_dir, os.path.splitext(os.path.basename(f))[0] + ".png")
+                save_images(samples,[1, len(samples)],out_path.replace(".png",".tmp.png"))
+                os.rename(out_path.replace(".png",".tmp.png"),out_path)
+                os.remove(f)
+
+            time.sleep(0.005)
+
+
 
     def test(self):
         tf.global_variables_initializer().run()
@@ -853,7 +919,7 @@ class BigGAN(object):
                         result_dir + '/' + self.model_name + '_test_{}.png'.format(i))
 
 
-    def generate(self, zv, cls_zv):
+    def generate(self, zv, cls_zv, ema=True):
 
         zvc = zv.copy()
         while len(zvc) % self.batch_size != 0:
@@ -866,7 +932,9 @@ class BigGAN(object):
             if cls_zv:
                 feed_dict[self.cls_z]=cls_zv[b * self.batch_size:(b + 1) * self.batch_size]
 
-            batch = self.sess.run(self.z_generator, feed_dict)
+            generator = self.sample_fake_images if ema else self.sample_fake_images_noema
+
+            batch = self.sess.run(generator, feed_dict)
             if b == 0:
                 samples = batch
             else:

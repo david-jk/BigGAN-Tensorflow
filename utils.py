@@ -60,6 +60,24 @@ def read_labels(path):
 
     return labels
 
+def read_vectors(path):
+    vectors=[]
+    cmds={}
+    with open(path, 'r') as csvFile:
+        reader = csv.reader(csvFile, delimiter='\t', quotechar='"')
+
+        for i, row in enumerate(reader):
+            if len(row)>0 and row[0][0]=='!':
+                row[0] = row[0][1:]
+                for cmd in row:
+                    p = cmd.split('=', 1)
+                    cmds[p[0]]=p[1] if len(p)>1 else ''
+            else:
+                vec = list(map(float, row))
+                vectors.append(vec)
+
+    return cmds, vectors
+
 def load_data(dataset_name, label_file) :
     if dataset_name == 'mnist' :
         x = load_mnist()
