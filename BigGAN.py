@@ -40,6 +40,21 @@ class BigGAN(object):
         if self.g_final_layer:
             self.depth += 1
 
+        self.activation = args.activation
+        if self.activation=='relu':
+            self.activation_fn = relu
+        elif self.activation=='prelu':
+            self.activation_fn = prelu
+        elif self.activation=='lrelu':
+            def lrelu_p(alpha):
+                def lrelu_a(x):
+                    return lrelu(x,alpha)
+                return lrelu_a
+            self.activation_fn = lrelu_p(0.2)
+        else:
+            raise ValueError("Unknown activation function: "+str(self.activation))
+
+
         if self.g_final_mixed_conv and not self.g_final_layer:
             raise ValueError("g_final_mixed_conv set, but not g_final_layer")
 
@@ -179,7 +194,8 @@ class BigGAN(object):
 
         opt = {"sn": self.sn,
                "is_training": is_training,
-               "upsampling_method": self.upsampling_method}
+               "upsampling_method": self.upsampling_method,
+               "act": self.activation_fn}
 
         if is_training:
             if self.g_regularization_method=='none':
@@ -225,9 +241,17 @@ class BigGAN(object):
             ch = self.g_channels_for_block(0, len(block_info["counts"]))
 
             if self.g_first_level_dense_layer:
-                x=fully_connected(z_split[0], units=self.round_up((first_split_dim+self.n_labels)*1.85,8), scope='dense1', opt=opt)
-                x=relu(x)
-                x=fully_connected(x, units=4*4*ch, scope='dense2', opt=opt)
+                f_width = self.round_up((first_split_dim+self.n_labels)*1.85,8)
+                if opt["act"]==relu:
+                    # omit scope for backward compatibility
+                    x=fully_connected(z_split[0], units=f_width, scope='dense1', opt=opt)
+                    x=relu(x)
+                    x=fully_connected(x, units=4*4*ch, scope='dense2', opt=opt)
+                else:
+                    with tf.variable_scope('first'):
+                        x=fully_connected(z_split[0], units=f_width, scope='dense1', opt=opt)
+                        x=opt["act"](x)
+                        x=fully_connected(x, units=4 * 4 * ch, scope='dense2', opt=opt)
             else: x=fully_connected(z_split[0], units=4*4*ch, scope='dense', opt=opt)
 
             x=tf.reshape(x, shape=[-1, 4, 4, ch])
@@ -250,7 +274,7 @@ class BigGAN(object):
                 ch_mul=ch_mul//2
 
             x = batch_norm(x, opt=opt)
-            x = relu(x)
+            x = opt["act"](x)
 
             if self.g_final_layer:
                 with tf.variable_scope('final'):
@@ -263,7 +287,7 @@ class BigGAN(object):
                     else:
                         zfi_ch = split_dim * 2
                     final = fully_connected(z_split[self.depth - 1], units=zfi_ch, scope='dense', opt=opt)
-                    final = relu(final)
+                    final = opt["act"](final)
                     final_scale = fully_connected(final, units=final_channels, scope='dense2', opt=opt)
                     final_scale = tf.reshape(final_scale, shape=[-1, 1, 1, final_channels])
 
@@ -301,7 +325,8 @@ class BigGAN(object):
 
         opt = {"sn": self.sn,
                "is_training": is_training,
-               "bn_in_d": self.bn_in_d}
+               "bn_in_d": self.bn_in_d,
+               "act": self.activation_fn}
 
         with tf.variable_scope("discriminator", reuse=reuse):
             ch = self.d_channels_for_block(0)
@@ -331,7 +356,7 @@ class BigGAN(object):
             ch=self.d_channels_for_block(b_i-1)  # last layer has same width as previous one
 
             x = resblock(x, channels=ch, use_bias=False, opt=opt, scope='resblock')
-            x = relu(x)
+            x = opt["act"](x)
 
             features = global_sum_pooling(x)
 
