@@ -78,13 +78,41 @@ def read_vectors(path):
 
     return cmds, vectors
 
-def load_data(dataset_name, label_file) :
+def read_weights(path):
+    weights=read_labels(path)
+    for fn in weights:
+        weights[fn]=weights[fn][0]
+
+    return weights
+
+def load_data(dataset_name, label_file, weight_file=None) :
     if dataset_name == 'mnist' :
         x = load_mnist()
     elif dataset_name == 'cifar10' :
         x = load_cifar10()
     else :
         x = glob(os.path.join("./dataset", dataset_name, '*.*'))
+
+    if weight_file:
+        new_x = []
+        weights = read_weights(weight_file)
+        for full in x:
+            fn = os.path.basename(full)
+
+            if fn not in weights:
+                w = 1.0
+            else:
+                w = weights[fn]
+
+            iw = int(w)
+            if float(w)!=w:
+                ifrac = int((w-iw)*1000.0)
+                if np.random.randint(1000)<ifrac:
+                    iw += 1
+            for i in range(0, iw):
+                new_x.append(full)
+
+        x = new_x
 
     if label_file:
         labels = read_labels(label_file)

@@ -32,6 +32,7 @@ class BigGAN(object):
         self.n_labels = args.n_labels
         self.acgan = self.n_labels>0
         self.label_file = args.label_file
+        self.weight_file = args.weight_file
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
         self.g_final_layer = args.g_final_layer
         self.g_final_mixed_conv = args.g_final_mixed_conv
@@ -117,7 +118,7 @@ class BigGAN(object):
 
         else:
             self.c_dim = 3
-            self.data, self.labels = load_data(dataset_name=self.dataset_name, label_file=self.label_file)
+            self.data, self.labels = load_data(dataset_name=self.dataset_name, label_file=self.label_file, weight_file=self.weight_file)
             self.custom_dataset = True
 
         self.dataset_num = len(self.data)
