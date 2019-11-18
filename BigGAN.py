@@ -71,7 +71,16 @@ class BigGAN(object):
         self.gan_type = args.gan_type
         self.d_loss_func = args.d_loss_func if args.d_loss_func else self.gan_type
 
-        self.use_gradient_penalty = self.gan_type.__contains__('wgan') or self.gan_type == 'dragan'
+        if self.d_loss_func.__contains__('wgan'):
+            self.gradient_penalty_type = self.gan_type
+        elif self.d_loss_func.__contains__('dragan'):
+            self.gradient_penalty_type = 'dragan'
+        else:
+            self.gradient_penalty_type = None
+
+
+        self.use_gradient_penalty = bool(self.gradient_penalty_type)
+
 
         if self.use_gradient_penalty and self.z_reconstruct:
             raise ValueError('Z reconstruction is currently not supported when gradient penalty is used (WGAN and DRAGAN)')
@@ -352,7 +361,7 @@ class BigGAN(object):
             return outputs
 
     def gradient_penalty(self, real, fake):
-        if self.gan_type.__contains__('dragan'):
+        if self.gradient_penalty_type == 'dragan':
             eps = tf.random_uniform(shape=tf.shape(real), minval=0., maxval=1.)
             _, x_var = tf.nn.moments(real, axes=[0, 1, 2, 3])
             x_std = tf.sqrt(x_var)  # magnitude of noise decides the size of local region
@@ -370,10 +379,10 @@ class BigGAN(object):
         GP = 0
 
         # WGAN - LP
-        if self.gan_type == 'wgan-lp':
+        if self.gradient_penalty_type == 'wgan-lp':
             GP = self.ld * tf.reduce_mean(tf.square(tf.maximum(0.0, grad_norm - 1.)))
 
-        elif self.gan_type == 'wgan-gp' or self.gan_type == 'dragan':
+        elif self.gradient_penalty_type == 'wgan-gp' or self.gradient_penalty_type == 'dragan':
             GP = self.ld * tf.reduce_mean(tf.square(grad_norm - 1.))
 
         return GP
