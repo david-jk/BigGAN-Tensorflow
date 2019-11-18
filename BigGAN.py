@@ -35,6 +35,7 @@ class BigGAN(object):
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
         self.g_final_layer = args.g_final_layer
         self.g_final_mixed_conv = args.g_final_mixed_conv
+        self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
         if self.g_final_layer:
             self.depth += 1
 
@@ -241,7 +242,8 @@ class BigGAN(object):
 
                     if self.g_final_mixed_conv:
                         x = clown_conv(x, self.ch, opt=opt)
-                        x = clown_conv(x, self.ch, scope="clown2", opt=opt)
+                        for i in range(1,self.g_final_mixed_conv_stacks):
+                            x = clown_conv(x, self.ch, scope="clown"+str(i+1), opt=opt)
                     x = conv(x, channels=final_channels, kernel=3, stride=1, pad=1, use_bias=False, opt=opt)
                     if use_bias:
                         x = x * final_scale + final_bias
