@@ -16,8 +16,9 @@ def parse_args():
     parser.add_argument('--ch', type=int, default=64, help='base channel number per layer')
     parser.add_argument('--d_ch', type=int, default=0, help='base channel number per layer in discriminator')
 
-    parser.add_argument('--print_freq', type=int, default=1000, help='The number of image_print_freqy')
-    parser.add_argument('--save_freq', type=int, default=1000, help='The number of ckpt_save_freq')
+    parser.add_argument('--print_freq', type=int, default=250, help='how often a set of samples is generated')
+    parser.add_argument('--save_freq', type=int, default=1000, help='how often checkpoints are saved')
+    parser.add_argument('--keep_checkpoints', type=int, default=5, help='keep N last checkpoints, 0 to keep all')
 
     parser.add_argument('--g_lr', type=float, default=0.00005, help='learning rate for generator')
     parser.add_argument('--d_lr', type=float, default=0.0002, help='learning rate for discriminator')

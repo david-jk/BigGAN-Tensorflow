@@ -26,6 +26,10 @@ class BigGAN(object):
         self.virtual_batches = args.virtual_batches
         self.print_freq = args.print_freq
         self.save_freq = args.save_freq
+        self.keep_checkpoints = args.keep_checkpoints
+        if self.keep_checkpoints==0:
+            self.keep_checkpoints=None
+
         self.img_size = args.img_size
         self.depth = args.img_size.bit_length()-2
         self.save_morphs = args.save_morphs
@@ -590,7 +594,7 @@ class BigGAN(object):
         tf.global_variables_initializer().run()
 
         # saver to save model
-        self.saver = self.opt.swapping_saver()
+        self.saver = self.opt.swapping_saver(max_to_keep=self.keep_checkpoints)
 
         # summary writer
         self.writer = tf.summary.FileWriter(self.log_dir + '/' + self.model_dir, self.sess.graph)
