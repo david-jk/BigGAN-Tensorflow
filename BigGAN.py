@@ -329,7 +329,7 @@ class BigGAN(object):
 
             if self.c_dim==4 and self.alpha_mask:
                 rgb, alpha = tf.split(x, num_or_size_splits=[3,1], axis=-1)
-                rgb_filtered = rgb * ((alpha+1.0)*0.5)
+                rgb_filtered = ((rgb + 1.0) * (alpha + 1.0) * 0.5) - 1.0
                 x = tf.concat([rgb_filtered, alpha], axis=-1)
 
 
