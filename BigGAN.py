@@ -130,20 +130,10 @@ class BigGAN(object):
         self.beta2 = args.beta2
         self.moving_decay = args.moving_decay
 
-        self.custom_dataset = False
-
-        if self.dataset_name == 'mnist':
-            self.c_dim = 1
-            self.data = load_mnist()
-
-        elif self.dataset_name == 'cifar10':
-            self.c_dim = 3
-            self.data = load_cifar10()
-
-        else:
-            self.c_dim = 3
-            self.data, self.labels = load_data(dataset_name=self.dataset_name, label_file=self.label_file, weight_file=self.weight_file)
-            self.custom_dataset = True
+        self.custom_dataset = True
+        self.c_dim = args.c_dim
+        self.alpha_mask = args.alpha_mask
+        self.data, self.labels = load_data(dataset_name=self.dataset_name, label_file=self.label_file, weight_file=self.weight_file)
 
         self.dataset_num = len(self.data)
 
@@ -336,6 +326,11 @@ class BigGAN(object):
             elif self.img_size==256: block_info={"counts": [1, 1, 1, 2, 1], "sa_index": 2}
             elif self.img_size==512: block_info={"counts": [1, 2, 1, 1, 2], "sa_index": 2}
             else: raise ValueError("Invalid image size specified: "+str(self.img_size))
+
+            if self.c_dim==4 and self.alpha_mask:
+                rgb, alpha = tf.split(x, num_or_size_splits=[3,1], axis=-1)
+                rgb_filtered = rgb * ((alpha+1.0)*0.5)
+                x = tf.concat([rgb_filtered, alpha], axis=-1)
 
 
             b_i=0

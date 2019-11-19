@@ -27,6 +27,8 @@ def parse_args():
     parser.add_argument('--moving_decay', type=float, default=0.999 , help='moving average decay for generator')
 
     parser.add_argument('--z_dim', type=int, default=256, help='Dimension of noise vector')
+    parser.add_argument('--c_dim', type=int, default=3, help='number of color channels [1, 3, 4]')
+    parser.add_argument('--alpha_mask', type=str2bool, default=False, help='if c_dim is 4, multiplies the color channels with the alpha before feeding the image to the discriminator')
     parser.add_argument('--first_split_ratio', type=int, default=3, help='ratio of z values assigned to the first layer')
     parser.add_argument('--z_reconstruct', type=str2bool, default=False, help='train the discriminator to reconstruct z')
     parser.add_argument('--sn', type=str2bool, default=True, help='using spectral norm')

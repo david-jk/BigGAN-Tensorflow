@@ -22,7 +22,7 @@ class ImageData:
             x_decode = filename
         else :
             x = tf.read_file(filename)
-            x_decode = tf.image.decode_jpeg(x, channels=self.channels)
+            x_decode = tf.image.decode_png(x, channels=self.channels)
 
         img = tf.image.resize_images(x_decode, [self.load_size, self.load_size])
         img = tf.cast(img, tf.float32) / 127.5 - 1
@@ -34,19 +34,6 @@ class ImageData:
         img = self.image_processing(filename)
         return img, label
 
-
-def load_mnist():
-    (train_data, train_labels), (test_data, test_labels) = mnist.load_data()
-    x = np.concatenate((train_data, test_data), axis=0)
-    x = np.expand_dims(x, axis=-1)
-
-    return x
-
-def load_cifar10() :
-    (train_data, train_labels), (test_data, test_labels) = cifar10.load_data()
-    x = np.concatenate((train_data, test_data), axis=0)
-
-    return x
 
 def read_labels(path):
     labels={}
