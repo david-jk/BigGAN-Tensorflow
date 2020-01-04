@@ -327,7 +327,7 @@ def tanh(x):
 
 def batch_norm(x, opt, scope='batch_norm'):
     return tf.layers.batch_normalization(x,
-                                         momentum=0.9,
+                                         momentum=0.98,
                                          epsilon=1e-05,
                                          training=opt["is_training"],
                                          name=scope)
@@ -335,7 +335,7 @@ def batch_norm(x, opt, scope='batch_norm'):
 def condition_batch_norm(x, z, opt, scope='batch_norm'):
     with tf.variable_scope(scope) :
         _, _, _, c = x.get_shape().as_list()
-        decay = 0.9
+        decay = 0.98
         epsilon = 1e-05
 
         test_mean = tf.get_variable("pop_mean", shape=[c], dtype=tf.float32, initializer=tf.constant_initializer(0.0), trainable=False)
