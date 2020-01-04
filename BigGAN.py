@@ -41,6 +41,7 @@ class BigGAN(object):
         self.g_final_layer = args.g_final_layer
         self.g_final_mixed_conv = args.g_final_mixed_conv
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
+        self.g_final_mixed_conv_mix_kernel = args.g_final_mixed_conv_mix_kernel
         if self.g_final_layer:
             self.depth += 1
 
@@ -299,7 +300,7 @@ class BigGAN(object):
                     else:
                         x = x * final_scale
                     x = prelu(x)
-                x = conv(x, channels=self.c_dim, kernel=1, stride=1, pad=0, use_bias=False, opt=opt, scope='G_logit')
+                x = conv(x, channels=self.c_dim, kernel=self.g_final_mixed_conv_mix_kernel, stride=1, pad=(self.g_final_mixed_conv_mix_kernel-1)//2, use_bias=False, opt=opt, scope='G_logit')
 
             else:
                 x = conv(x, channels=self.c_dim, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='G_logit')
