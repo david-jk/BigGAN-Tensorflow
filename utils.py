@@ -7,7 +7,6 @@ from glob import glob
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
-from keras.datasets import cifar10, mnist
 
 class ImageData:
 
