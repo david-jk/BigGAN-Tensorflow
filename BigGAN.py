@@ -942,10 +942,12 @@ class BigGAN(object):
 
                 for i, z in enumerate(z_samples):
                     z_samples[i] = [[z]]
-                samples = self.generate(z_samples, cls_z, ema=use_ema)
-                out_path = os.path.join(self.request_dir, os.path.splitext(os.path.basename(f))[0] + ".png")
-                save_images(samples,[1, len(samples)],out_path.replace(".png",".tmp.png"))
-                os.rename(out_path.replace(".png",".tmp.png"),out_path)
+
+                if len(z_samples)>0:
+                    samples = self.generate(z_samples, cls_z, ema=use_ema)
+                    out_path = os.path.join(self.request_dir, os.path.splitext(os.path.basename(f))[0] + ".png")
+                    save_images(samples,[1, len(samples)],out_path.replace(".png",".tmp.png"))
+                    os.rename(out_path.replace(".png",".tmp.png"),out_path)
                 os.remove(f)
 
             time.sleep(0.005)
