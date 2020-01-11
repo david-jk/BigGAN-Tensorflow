@@ -38,6 +38,7 @@ class BigGAN(object):
         self.label_file = args.label_file
         self.weight_file = args.weight_file
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
+        self.g_other_level_dense_layer = args.g_other_level_dense_layer
         self.g_final_layer = args.g_final_layer
         self.g_final_mixed_conv = args.g_final_mixed_conv
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
@@ -258,7 +259,14 @@ class BigGAN(object):
                 scope='resblock_up_'+str(ch_mul)
                 for sb_i in range(block_count):
                     if block_count>1: scope=scope+'_'+str(sb_i)
-                    x=resblock_up_condition(x, z_split[z_i], channels=ch, use_bias=False, opt=opt, scope=scope)
+                    if self.g_other_level_dense_layer:
+                        with tf.variable_scope('z'+str(ch_mul)):
+                            f_width = self.round_up((split_dim+self.n_labels)*1.25,8)
+                            block_z = fully_connected(z_split[z_i], units=f_width, scope='dense1', opt=opt)
+                            block_z = opt["act"](block_z)
+                    else:
+                        block_z = z_split[z_i]
+                    x=resblock_up_condition(x, block_z, channels=ch, use_bias=False, opt=opt, scope=scope)
                     z_i+=1
 
                 b_i+=1

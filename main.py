@@ -60,6 +60,7 @@ def parse_args():
     parser.add_argument('--label_file', type=str, default='', help='label file, required if n_labels>0')
     parser.add_argument('--weight_file', type=str, default='', help='weight file containing sample selection probabilities')
     parser.add_argument('--g_first_level_dense_layer', type=str2bool, default=True, help='adds an extra dense layer between the z inputs and the 4x4 layer')
+    parser.add_argument('--g_other_level_dense_layer', type=str2bool, default=False, help='adds an extra dense layer between the z inputs and the intermediate layers')
     parser.add_argument('--g_final_layer', type=str2bool, default=False, help='adds a z-powered layer in the generator before the RGB output')
     parser.add_argument('--g_final_mixed_conv', type=str2bool, default=False, help='adds experimental mixed convolutions in the final generator layer')
     parser.add_argument('--g_final_mixed_conv_stacks', type=int, default=2, help='number of mixed convolution stacks, if enabled')
