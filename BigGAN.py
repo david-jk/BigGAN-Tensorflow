@@ -35,6 +35,7 @@ class BigGAN(object):
         self.save_morphs = args.save_morphs
         self.n_labels = args.n_labels
         self.acgan = self.n_labels>0
+        self.cls_loss_type = args.cls_loss_type
         self.label_file = args.label_file
         self.weight_file = args.weight_file
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
@@ -494,7 +495,16 @@ class BigGAN(object):
 
         if self.acgan:
             cls_weights = tf.constant(self.cls_loss_weights, dtype=tf.float32)
-            self.d_classification_loss = self.d_cls_loss_weight * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.label_input,logits=real_cls_logits)*cls_weights)
+
+            def cls_loss(truth,answer):
+                if self.cls_loss_type == 'logistic':
+                    return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=truth,logits=answer)*cls_weights)
+                elif self.cls_loss_type == 'euclidean':
+                    return tf.norm((answer - truth) * cls_weights, ord='euclidean')
+                else:
+                    raise ValueError("Invalid label loss type: "+self.cls_loss_type)
+
+            self.d_classification_loss = self.d_cls_loss_weight * cls_loss(self.label_input,real_cls_logits)
 
         if self.z_reconstruct:
             loss_f = tf.constant(1.0/self.z_dim)
@@ -506,8 +516,7 @@ class BigGAN(object):
         self.g_classification_loss = 0
 
         if self.acgan:
-            self.g_classification_loss = self.g_cls_loss_weight * tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(labels=self.cls_z, logits=fake_cls_logits)*cls_weights)
+            self.g_classification_loss = self.g_cls_loss_weight * cls_loss(self.cls_z,fake_cls_logits)
 
         # get loss for generator
         self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss) + (self.z_reconstruct_loss*5.0)
