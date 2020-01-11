@@ -40,6 +40,7 @@ class BigGAN(object):
         self.weight_file = args.weight_file
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
         self.g_other_level_dense_layer = args.g_other_level_dense_layer
+        self.d_cls_dense_layers = args.d_cls_dense_layers
         self.g_final_layer = args.g_final_layer
         self.g_final_mixed_conv = args.g_final_mixed_conv
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
@@ -376,7 +377,17 @@ class BigGAN(object):
 
             if self.acgan:
                 opt["sn"]=False
-                y = fully_connected(features, units=self.n_labels, opt=opt, scope='DC_logit')
+                if self.d_cls_dense_layers:
+                    with tf.variable_scope("classification", reuse=reuse):
+                        cls_funits1 = self.round_up(ch/16.0+self.n_labels*1.25,8)
+                        y = fully_connected(features, units=cls_funits1, opt=opt, scope='dense1')
+                        y = opt["act"](y)
+                        cls_funits2 = self.round_up(cls_funits1/4.0+self.n_labels*1.1,4)
+                        y = fully_connected(y, units=cls_funits2, opt=opt, scope='dense2')
+                        y = opt["act"](y)
+                        y = fully_connected(y, units=self.n_labels, opt=opt, scope='DC_logit')
+                else:
+                    y = fully_connected(features, units=self.n_labels, opt=opt, scope='DC_logit')
                 outputs["cls"] = y
 
             if self.z_reconstruct:
