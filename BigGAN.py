@@ -43,6 +43,7 @@ class BigGAN(object):
         self.d_cls_dense_layers = args.d_cls_dense_layers
         self.g_final_layer = args.g_final_layer
         self.g_final_layer_shortcuts = args.g_final_layer_shortcuts
+        self.g_final_layer_shortcuts_after = args.g_final_layer_shortcuts_after
         self.g_final_mixed_conv = args.g_final_mixed_conv
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
         self.g_final_mixed_conv_mix_kernel = args.g_final_mixed_conv_mix_kernel
@@ -286,11 +287,13 @@ class BigGAN(object):
                 with tf.variable_scope('final'):
 
                     if self.g_final_layer_shortcuts:
-                        slice_units = self.round_up(self.ch/8.0,4)
-                        final_slice_units = self.round_up(slice_units*2.5,4)
-                        final_channels = slice_units*(self.g_final_mixed_conv_stacks) + final_slice_units
+                        lsa_i = self.g_final_layer_shortcuts_after
+                        slice_units = self.round_up(self.ch/(8.0-lsa_i*1.5),4)
+                        final_slice_units = self.round_up(slice_units*(2.5-lsa_i*0.25),4)
+                        final_channels = slice_units*(self.g_final_mixed_conv_stacks-lsa_i) + final_slice_units
                         slices = []
-                        slices.append(conv(x, channels=slice_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope="slice1"))
+                        if lsa_i==0:
+                            slices.append(conv(x, channels=slice_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope="slice1"))
                     else:
                         final_channels = self.scale_channels(self.ch, 0.5)
 
@@ -312,7 +315,7 @@ class BigGAN(object):
                     if self.g_final_mixed_conv:
                         for i in range(0,self.g_final_mixed_conv_stacks):
                             x = clown_conv(x, self.ch, scope="clown"+('' if i==0 else str(i+1)), opt=opt)
-                            if self.g_final_layer_shortcuts:
+                            if self.g_final_layer_shortcuts and (i+1)>=lsa_i:
                                 s_units = final_slice_units if (i==self.g_final_mixed_conv_stacks-1) else slice_units
                                 slices.append(conv(x, channels=s_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='slice'+str(i+2)))
 
