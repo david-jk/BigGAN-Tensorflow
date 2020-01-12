@@ -42,6 +42,7 @@ class BigGAN(object):
         self.g_other_level_dense_layer = args.g_other_level_dense_layer
         self.d_cls_dense_layers = args.d_cls_dense_layers
         self.g_final_layer = args.g_final_layer
+        self.g_final_layer_shortcuts = args.g_final_layer_shortcuts
         self.g_final_mixed_conv = args.g_final_mixed_conv
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
         self.g_final_mixed_conv_mix_kernel = args.g_final_mixed_conv_mix_kernel
@@ -283,7 +284,15 @@ class BigGAN(object):
 
             if self.g_final_layer:
                 with tf.variable_scope('final'):
-                    final_channels = self.scale_channels(self.ch, 0.5)
+
+                    if self.g_final_layer_shortcuts:
+                        slice_units = self.round_up(self.ch/8.0,4)
+                        final_slice_units = self.round_up(slice_units*2.5,4)
+                        final_channels = slice_units*(self.g_final_mixed_conv_stacks) + final_slice_units
+                        slices = []
+                        slices.append(conv(x, channels=slice_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope="slice1"))
+                    else:
+                        final_channels = self.scale_channels(self.ch, 0.5)
 
                     use_bias = True
 
@@ -301,10 +310,18 @@ class BigGAN(object):
                         final_bias = tf.reshape(final_bias, shape=[-1, 1, 1, final_channels])
 
                     if self.g_final_mixed_conv:
-                        x = clown_conv(x, self.ch, opt=opt)
-                        for i in range(1,self.g_final_mixed_conv_stacks):
-                            x = clown_conv(x, self.ch, scope="clown"+str(i+1), opt=opt)
-                    x = conv(x, channels=final_channels, kernel=3, stride=1, pad=1, use_bias=False, opt=opt)
+                        for i in range(0,self.g_final_mixed_conv_stacks):
+                            x = clown_conv(x, self.ch, scope="clown"+('' if i==0 else str(i+1)), opt=opt)
+                            if self.g_final_layer_shortcuts:
+                                s_units = final_slice_units if (i==self.g_final_mixed_conv_stacks-1) else slice_units
+                                slices.append(conv(x, channels=s_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='slice'+str(i+2)))
+
+                    if self.g_final_layer_shortcuts:
+                        x = tf.concat(slices, axis=-1)
+                    else:
+                        x = conv(x, channels=final_channels, kernel=3, stride=1, pad=1, use_bias=False, opt=opt)
+
+
                     if use_bias:
                         x = x * final_scale + final_bias
                     else:
