@@ -766,8 +766,8 @@ class BigGAN(object):
                     if self.acgan: g_cls_loss = past_g_cls_loss
 
                 if self.acgan:
-                    print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, d_cls_loss: %.8f, g_loss: %.8f, g_cls_loss: %.8f" \
-                          % (epoch, idx, self.iteration, time.time() - start_time, d_loss, d_cls_loss, g_loss, g_cls_loss))
+                    print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, d_cls_loss: %.8f x%.1f, g_loss: %.8f, g_cls_loss: %.8f x%.1f" \
+                          % (epoch, idx, self.iteration, time.time() - start_time, d_loss, d_cls_loss, self.d_cls_loss_weight, g_loss, g_cls_loss, self.g_cls_loss_weight))
                 else:
                     print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
                                   % (epoch, idx, self.iteration, time.time() - start_time, d_loss, g_loss))
