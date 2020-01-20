@@ -55,6 +55,7 @@ def parse_args():
     parser.add_argument('--z_trunc_sample', type=str2bool, default=True, help='whether to use truncated normal distribution for z during sample generation')
     parser.add_argument('--save_morphs', type=str2bool, default=False, help='when generating samples, also generates a morph between 4 random samples')
     parser.add_argument('--sample_ema', type=str, default='ema', help='[ema, noema, both] whether to generate samples using the moving average of the weights or not')
+    parser.add_argument('--random_flip', type=str2bool, default=True, help='if activated, flips input images left or right randomly')
 
     parser.add_argument('--n_labels', type=int, default=0, help='number of classes or labels')
     parser.add_argument('--label_file', type=str, default='', help='label file, required if n_labels>0')

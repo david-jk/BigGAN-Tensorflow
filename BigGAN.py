@@ -31,6 +31,7 @@ class BigGAN(object):
             self.keep_checkpoints=None
 
         self.img_size = args.img_size
+        self.random_flip = args.random_flip
         self.depth = args.img_size.bit_length()-2
         self.save_morphs = args.save_morphs
         self.n_labels = args.n_labels
@@ -459,7 +460,7 @@ class BigGAN(object):
     def build_model(self):
         """ Graph Input """
         # images
-        Image_Data_Class = ImageData(self.img_size, self.c_dim, self.custom_dataset)
+        Image_Data_Class = ImageData(self.img_size, self.c_dim, self.custom_dataset, self.random_flip)
         if self.acgan:
             inputs = tf.data.Dataset.from_tensor_slices((self.data,self.labels))
         else: inputs = tf.data.Dataset.from_tensor_slices(self.data)

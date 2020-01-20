@@ -11,10 +11,11 @@ import tensorflow.contrib.slim as slim
 
 class ImageData:
 
-    def __init__(self, load_size, channels, custom_dataset):
+    def __init__(self, load_size, channels, custom_dataset, flip):
         self.load_size = load_size
         self.channels = channels
         self.custom_dataset = custom_dataset
+        self.flip = flip
 
     def image_processing(self, filename):
 
@@ -25,6 +26,8 @@ class ImageData:
             x_decode = tf.image.decode_png(x, channels=self.channels)
 
         img = tf.image.resize_images(x_decode, [self.load_size, self.load_size])
+        if self.flip:
+            img = tf.image.random_flip_left_right(img)
         img = tf.cast(img, gan_dtype) / 127.5 - 1
 
         return img
