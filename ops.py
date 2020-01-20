@@ -11,6 +11,7 @@ import tensorflow as tf
 # Orthogonal : tf.orthogonal_initializer(1.0) / relu = sqrt(2), the others = 1.0
 
 weight_init = tf.truncated_normal_initializer(mean=0.0, stddev=0.02)
+gan_dtype = tf.float32
 
 ##################################################################################
 # Layer
@@ -40,15 +41,15 @@ def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, pad_type='refl
         if opt["sn"]:
             if 'generator' in full_scope.name:
                 w = tf.get_variable("kernel", shape=[kernel, kernel, x.get_shape()[-1], channels], initializer=weight_init,
-                                    regularizer=opt["conv_regularizer"])
+                                    regularizer=opt["conv_regularizer"], dtype=gan_dtype)
             else :
                 w = tf.get_variable("kernel", shape=[kernel, kernel, x.get_shape()[-1], channels], initializer=weight_init,
-                                    regularizer=None)
+                                    regularizer=None, dtype=gan_dtype)
 
             x = tf.nn.conv2d(input=x, filter=spectral_norm(w),
                              strides=[1, stride, stride, 1], padding='VALID', dilations=dilation)
             if use_bias :
-                bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0))
+                bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0), dtype=gan_dtype)
                 x = tf.nn.bias_add(x, bias)
 
         else :
@@ -78,11 +79,11 @@ def deconv(x, channels, opt, kernel=4, stride=2, padding='SAME', use_bias=True, 
             output_shape = [x_shape[0], x_shape[1] * stride + max(kernel - stride, 0), x_shape[2] * stride + max(kernel - stride, 0), channels]
 
         if opt["sn"]:
-            w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init, regularizer=opt["conv_regularizer"])
+            w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init, regularizer=opt["conv_regularizer"], dtype=gan_dtype)
             x = tf.nn.conv2d_transpose(x, filter=spectral_norm(w), output_shape=output_shape, strides=[1, stride, stride, 1], padding=padding)
 
             if use_bias :
-                bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0))
+                bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0), dtype=gan_dtype)
                 x = tf.nn.bias_add(x, bias)
 
         else :
@@ -100,12 +101,12 @@ def fully_connected(x, units, opt, use_bias=True, scope='fully_0'):
 
         if opt["sn"]:
             if 'generator' in full_scope.name:
-                w = tf.get_variable("kernel", [channels, units], tf.float32, initializer=weight_init, regularizer=opt["fc_regularizer"])
+                w = tf.get_variable("kernel", [channels, units], gan_dtype, initializer=weight_init, regularizer=opt["fc_regularizer"])
             else :
-                w = tf.get_variable("kernel", [channels, units], tf.float32, initializer=weight_init, regularizer=None)
+                w = tf.get_variable("kernel", [channels, units], gan_dtype, initializer=weight_init, regularizer=None)
 
             if use_bias :
-                bias = tf.get_variable("bias", [units], initializer=tf.constant_initializer(0.0))
+                bias = tf.get_variable("bias", [units], initializer=tf.constant_initializer(0.0), dtype=gan_dtype)
 
                 x = tf.matmul(x, spectral_norm(w)) + bias
             else :
@@ -246,7 +247,7 @@ def self_attention(x, channels, opt, scope='self_attention'):
         beta = tf.nn.softmax(s)  # attention map
 
         o = tf.matmul(beta, hw_flatten(h))  # [bs, N, C]
-        gamma = tf.get_variable("gamma", [1], initializer=tf.constant_initializer(0.0))
+        gamma = tf.get_variable("gamma", [1], initializer=tf.constant_initializer(0.0), dtype=gan_dtype)
 
         o = tf.reshape(o, shape=x.shape)  # [bs, h, w, C]
         x = gamma * o + x
@@ -269,7 +270,7 @@ def self_attention_2(x, channels, opt, scope='self_attention'):
         beta = tf.nn.softmax(s)  # attention map
 
         o = tf.matmul(beta, hw_flatten(h))  # [bs, N, C]
-        gamma = tf.get_variable("gamma", [1], initializer=tf.constant_initializer(0.0))
+        gamma = tf.get_variable("gamma", [1], initializer=tf.constant_initializer(0.0), dtype=gan_dtype)
 
         o = tf.reshape(o, shape=[x.shape[0], x.shape[1], x.shape[2], channels // 2])  # [bs, h, w, C]
         o = conv(o, channels, kernel=1, stride=1, opt=opt, scope='attn_conv')
@@ -313,7 +314,7 @@ def relu(x):
 
 def prelu(x, scope=None, init_val=0.0):
     with tf.variable_scope(name_or_scope=scope, default_name="prelu"):
-        alphas = tf.get_variable('alpha', x.get_shape()[-1], initializer=tf.constant_initializer(init_val), dtype=tf.float32)
+        alphas = tf.get_variable('alpha', x.get_shape()[-1], initializer=tf.constant_initializer(init_val), dtype=gan_dtype)
         pos = tf.nn.relu(x)
         neg = alphas * (x - abs(x)) * 0.5
         return pos + neg
@@ -338,8 +339,8 @@ def condition_batch_norm(x, z, opt, scope='batch_norm'):
         decay = 0.98
         epsilon = 1e-05
 
-        test_mean = tf.get_variable("pop_mean", shape=[c], dtype=tf.float32, initializer=tf.constant_initializer(0.0), trainable=False)
-        test_var = tf.get_variable("pop_var", shape=[c], dtype=tf.float32, initializer=tf.constant_initializer(1.0), trainable=False)
+        test_mean = tf.get_variable("pop_mean", shape=[c], dtype=gan_dtype, initializer=tf.constant_initializer(0.0), trainable=False)
+        test_var = tf.get_variable("pop_var", shape=[c], dtype=gan_dtype, initializer=tf.constant_initializer(1.0), trainable=False)
 
         beta = fully_connected(z, units=c, scope='beta', opt=opt)
         gamma = fully_connected(z, units=c, scope='gamma', opt=opt)
@@ -362,7 +363,7 @@ def spectral_norm(w, iteration=1):
     w_shape = w.shape.as_list()
     w = tf.reshape(w, [-1, w_shape[-1]])
 
-    u = tf.get_variable("u", [1, w_shape[-1]], initializer=tf.random_normal_initializer(), trainable=False)
+    u = tf.get_variable("u", [1, w_shape[-1]], initializer=tf.random_normal_initializer(), trainable=False, dtype=gan_dtype)
 
     u_hat = u
     v_hat = None

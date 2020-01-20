@@ -4,6 +4,7 @@ import os
 import imageio
 import csv
 from glob import glob
+from ops import gan_dtype
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -24,14 +25,14 @@ class ImageData:
             x_decode = tf.image.decode_png(x, channels=self.channels)
 
         img = tf.image.resize_images(x_decode, [self.load_size, self.load_size])
-        img = tf.cast(img, tf.float32) / 127.5 - 1
+        img = tf.cast(img, gan_dtype) / 127.5 - 1
 
         return img
 
     def image_processing_with_labels(self, filename, label):
 
         img = self.image_processing(filename)
-        return img, label
+        return img, tf.cast(label, gan_dtype)
 
 
 def read_labels(path):

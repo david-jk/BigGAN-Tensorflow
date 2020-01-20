@@ -427,13 +427,13 @@ class BigGAN(object):
 
     def gradient_penalty(self, real, fake):
         if self.gradient_penalty_type == 'dragan':
-            eps = tf.random_uniform(shape=tf.shape(real), minval=0., maxval=1.)
+            eps = tf.random_uniform(shape=tf.shape(real), minval=0., maxval=1., dtype=gan_dtype)
             _, x_var = tf.nn.moments(real, axes=[0, 1, 2, 3])
             x_std = tf.sqrt(x_var)  # magnitude of noise decides the size of local region
 
             fake = real + 0.5 * x_std * eps
 
-        alpha = tf.random_uniform(shape=[self.batch_size, 1, 1, 1], minval=0., maxval=1.)
+        alpha = tf.random_uniform(shape=[self.batch_size, 1, 1, 1], minval=0., maxval=1., dtype=gan_dtype)
         interpolated = real + alpha * (fake - real)
 
         logit = self.discriminator(interpolated, reuse=True)["real"]
@@ -479,17 +479,17 @@ class BigGAN(object):
 
         # noises
         if self.z_trunc_train:
-            self.z = tf.random.truncated_normal(shape=[self.batch_size, 1, 1, self.z_dim], name='random_z')
+            self.z = tf.random.truncated_normal(shape=[self.batch_size, 1, 1, self.z_dim], name='random_z', dtype=gan_dtype)
         else:
-            self.z = tf.random.normal(shape=[self.batch_size, 1, 1, self.z_dim], name='random_z')
+            self.z = tf.random.normal(shape=[self.batch_size, 1, 1, self.z_dim], name='random_z', dtype=gan_dtype)
 
         if self.z_trunc_sample==self.z_trunc_train:
             self.test_z = self.z
         else:
             if self.z_trunc_sample:
-                self.test_z = tf.random.truncated_normal(shape=[self.batch_size, 1, 1, self.z_dim], name='test_random_z')
+                self.test_z = tf.random.truncated_normal(shape=[self.batch_size, 1, 1, self.z_dim], name='test_random_z', dtype=gan_dtype)
             else:
-                self.test_z = tf.random.normal(shape=[self.batch_size, 1, 1, self.z_dim], name='test_random_z')
+                self.test_z = tf.random.normal(shape=[self.batch_size, 1, 1, self.z_dim], name='test_random_z', dtype=gan_dtype)
 
         """ Loss Function """
         # output of D for real images
@@ -499,8 +499,8 @@ class BigGAN(object):
 
         if self.acgan:
             real_cls_logits = d_outputs_real["cls"]
-            self.zero_cls_z = tf.zeros(shape=(self.batch_size,self.n_labels))
-            self.cls_z = tf.placeholder(tf.float32, [self.batch_size, self.n_labels], name='cls_z')
+            self.zero_cls_z = tf.zeros(shape=(self.batch_size,self.n_labels), dtype=gan_dtype)
+            self.cls_z = tf.placeholder(gan_dtype, [self.batch_size, self.n_labels], name='cls_z')
         else:
             self.zero_cls_z = None
             self.cls_z = None
@@ -525,7 +525,7 @@ class BigGAN(object):
         self.z_reconstruct_loss = 0
 
         if self.acgan:
-            cls_weights = tf.constant(self.cls_loss_weights, dtype=tf.float32)
+            cls_weights = tf.constant(self.cls_loss_weights, dtype=gan_dtype)
 
             def cls_loss(truth,answer):
                 if self.cls_loss_type == 'logistic':
@@ -571,7 +571,7 @@ class BigGAN(object):
             ema = self.opt._ema
 
             def virtual_batch_steps(opt, loss, vars):
-                grad_factor = tf.constant(1.0/self.virtual_batches)
+                grad_factor = tf.constant(1.0/self.virtual_batches, dtype=gan_dtype)
                 acc_vars = [tf.Variable(tf.zeros_like(v.read_value()), trainable=False, collections=[tf.GraphKeys.LOCAL_VARIABLES]) for v in vars]
                 zero_ops = [v.assign(tf.zeros_like(v)) for v in acc_vars]
                 with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
@@ -601,7 +601,7 @@ class BigGAN(object):
         self.fake_images = self.generator(self.test_z, self.zero_cls_z, is_training=False, reuse=True, custom_getter=ema_getter)
 
         if self.static_sample_z or self.save_morphs:
-            self.sample_z = tf.placeholder(tf.float32, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
+            self.sample_z = tf.placeholder(gan_dtype, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
             self.z_generator = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False, custom_getter=ema_getter)
 
         if self.static_sample_z:
