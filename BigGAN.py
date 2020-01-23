@@ -1,6 +1,7 @@
 import sys
 import time
 import random
+import math
 from ops import *
 from utils import *
 from tensorflow.contrib.data import prefetch_to_device, shuffle_and_repeat, map_and_batch
@@ -36,6 +37,11 @@ class BigGAN(object):
         self.save_morphs = args.save_morphs
         self.n_labels = args.n_labels
         self.acgan = self.n_labels>0
+        self.cls_embedding = args.cls_embedding
+        self.cls_embedding_size = args.cls_embedding_size
+        if self.cls_embedding and self.cls_embedding_size==0:
+            self.cls_embedding_size = self.round_up(math.pow(self.n_labels, 0.88)+24, 8)
+
         self.cls_loss_type = args.cls_loss_type
         self.label_file = args.label_file
         self.weight_file = args.weight_file
@@ -227,7 +233,7 @@ class BigGAN(object):
 
         with tf.variable_scope("generator", reuse=reuse, custom_getter=custom_getter):
 
-            new_z_dist = bool(self.mixed_conv_z_idx)
+            new_z_dist = bool(self.mixed_conv_z_idx) or self.cls_embedding
 
             if not new_z_dist:
                 if self.first_split_ratio>1:
@@ -272,6 +278,7 @@ class BigGAN(object):
 
             z_split = tf.split(z, num_or_size_splits=split_sizes, axis=-1)
             zvec_sizes = split_sizes[:]
+            clsz_size = self.n_labels
 
             next_zi = 0
             def next_z_split():
@@ -281,10 +288,17 @@ class BigGAN(object):
                 return z_split[zi], split_sizes[zi], zvec_sizes[zi]
 
             if self.acgan:
-                scls_z = tf.reshape(cls_z, shape=[-1, 1, 1, self.n_labels])
+                if self.cls_embedding:
+                    with tf.variable_scope('cls_embed'):
+                        cls_z = fully_connected(cls_z, units=self.cls_embedding_size, scope='dense1', opt=opt)
+                        cls_z = opt["act"](cls_z)
+                        clsz_size = self.cls_embedding_size
+
+                cls_z = tf.reshape(cls_z, shape=[-1, 1, 1, clsz_size])
+
                 for i in range(len(z_split)):
-                    z_split[i] = tf.concat([z_split[i],scls_z],axis=-1)
-                    zvec_sizes[i]+=self.n_labels
+                    z_split[i] = tf.concat([z_split[i],cls_z],axis=-1)
+                    zvec_sizes[i]+=clsz_size
 
             if new_z_dist and self.g_other_level_dense_layer:
 
