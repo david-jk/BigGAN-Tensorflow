@@ -146,9 +146,9 @@ def resblock(x_init, channels, opt, use_bias=True, scope='resblock'):
         return x + x_init
 
 def upconv(x, channels, opt, use_bias=True):
-    if opt["upsampling_method"] == 'deconv_3':
+    if opt["upsampling_method"] == 'deconv3':
         return deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
-    elif opt["upsampling_method"] == 'deconv_4':
+    elif opt["upsampling_method"] == 'deconv4':
         return deconv(x, channels, kernel=4, stride=2, use_bias=use_bias, opt=opt)
     elif opt["upsampling_method"] == 'resize_conv':
         x = up_sample(x, 2)
@@ -156,6 +156,18 @@ def upconv(x, channels, opt, use_bias=True):
         return x
 
     else: raise ValueError("Invalid upsampling method specified: "+str(opt["upsampling_method"]))
+
+def g_conv(x, channels, opt, use_bias=True):
+    if opt["g_conv"] == 'deconv3':
+        return deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, opt=opt)
+    elif opt["g_conv"] == 'deconv4':
+        return deconv(x, channels, kernel=4, stride=1, use_bias=use_bias, opt=opt)
+    elif opt["g_conv"] == 'conv3':
+        return conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
+    elif opt["g_conv"] == 'conv5':
+        return conv(x, channels, kernel=5, stride=1, pad=2, use_bias=use_bias, opt=opt)
+
+    else: raise ValueError("Invalid generator convolution type specified: "+str(opt["g_conv"]))
 
 def resblock_up(x_init, channels, opt, use_bias=True, scope='resblock_up'):
     with tf.variable_scope(scope):
@@ -167,7 +179,7 @@ def resblock_up(x_init, channels, opt, use_bias=True, scope='resblock_up'):
         with tf.variable_scope('res2') :
             x = batch_norm(x, opt=opt)
             x = opt["act"](x)
-            x = deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, opt=opt)
+            x = g_conv(x, channels, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
             x_init = upconv(x_init, channels, use_bias=use_bias, opt=opt)
@@ -185,7 +197,7 @@ def resblock_up_condition(x_init, z, channels, opt, use_bias=True, scope='resblo
         with tf.variable_scope('res2') :
             x = condition_batch_norm(x, z, opt=opt)
             x = opt["act"](x)
-            x = deconv(x, channels, kernel=3, stride=1, use_bias=use_bias, opt=opt)
+            x = g_conv(x, channels, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
             x_init = upconv(x_init, channels, use_bias=use_bias, opt=opt)

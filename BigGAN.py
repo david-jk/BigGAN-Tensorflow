@@ -89,6 +89,7 @@ class BigGAN(object):
         """ Generator """
         self.ch = args.ch
         self.upsampling_method = args.upsampling_method
+        self.g_conv = args.g_conv
         self.g_grow_factor = args.g_grow_factor
         self.g_regularization_method = args.g_regularization
         self.g_regularization_factor = args.g_regularization_factor
@@ -202,6 +203,7 @@ class BigGAN(object):
         opt = {"sn": self.sn,
                "is_training": is_training,
                "upsampling_method": self.upsampling_method,
+               "g_conv": self.g_conv,
                "act": self.activation_fn}
 
         if is_training:
