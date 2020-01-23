@@ -69,6 +69,7 @@ def parse_args():
     parser.add_argument('--g_other_level_dense_layer', type=str2bool, default=False, help='adds an extra dense layer between the z inputs and the intermediate layers')
     parser.add_argument('--d_cls_dense_layers', type=str2bool, default=False, help='adds two extra layers before the classification output of the discriminator')
     parser.add_argument('--g_final_layer', type=str2bool, default=False, help='adds a z-powered layer in the generator before the RGB output')
+    parser.add_argument('--g_final_layer_extra', type=str2bool, default=False, help='adds another convolution before final output, recommended if --g_final_layer_shortcuts is used')
     parser.add_argument('--g_final_layer_shortcuts', type=str2bool, default=False, help='adds shortcuts between the individual mixed conv layers and the final output')
     parser.add_argument('--g_final_layer_shortcuts_after', type=int, default=0, help='start adding shortcuts after this layer (0=initial max size layer, 1=first mixed conv layer)')
     parser.add_argument('--g_final_mixed_conv', type=str2bool, default=False, help='adds experimental mixed convolutions in the final generator layer')

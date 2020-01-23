@@ -49,6 +49,7 @@ class BigGAN(object):
         self.g_other_level_dense_layer = args.g_other_level_dense_layer
         self.d_cls_dense_layers = args.d_cls_dense_layers
         self.g_final_layer = args.g_final_layer
+        self.g_final_layer_extra = args.g_final_layer_extra
         self.g_final_layer_shortcuts = args.g_final_layer_shortcuts
         self.g_final_layer_shortcuts_after = args.g_final_layer_shortcuts_after
         self.g_final_mixed_conv = args.g_final_mixed_conv
@@ -452,6 +453,11 @@ class BigGAN(object):
                     else:
                         x = x * final_scale
                     x = prelu(x)
+
+                    if self.g_final_layer_extra:
+                        x = conv(x, channels=24, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='conv2')
+                        x = prelu(x, scope='prelu2')
+
                 x = conv(x, channels=self.c_dim, kernel=self.g_final_mixed_conv_mix_kernel, stride=1, pad=(self.g_final_mixed_conv_mix_kernel-1)//2, use_bias=False, opt=opt, scope='G_logit')
 
             else:
