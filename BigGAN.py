@@ -48,6 +48,12 @@ class BigGAN(object):
         self.g_final_mixed_conv = args.g_final_mixed_conv
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
         self.g_final_mixed_conv_mix_kernel = args.g_final_mixed_conv_mix_kernel
+
+        if args.g_final_mixed_conv_z_layers=='all':
+            self.mixed_conv_z_idx = list(range(self.g_final_mixed_conv_stacks))
+        else:
+            self.mixed_conv_z_idx = parse_int_list(args.g_final_mixed_conv_z_layers)
+
         if self.g_final_layer:
             self.depth += 1
 
@@ -218,19 +224,18 @@ class BigGAN(object):
             opt["fc_regularizer"]=None
 
         with tf.variable_scope("generator", reuse=reuse, custom_getter=custom_getter):
-            if self.first_split_ratio>1:
-                split_dim = self.z_dim // (self.depth - 1 + self.first_split_ratio)
-                first_split_dim = self.z_dim - (self.depth - 1) * split_dim
-            else:
-                split_dim = self.z_dim // self.depth
-                first_split_dim = split_dim
 
-            z_split = tf.split(z, num_or_size_splits=[first_split_dim] + ([split_dim] * (self.depth - 1)), axis=-1)
+            new_z_dist = bool(self.mixed_conv_z_idx)
 
-            if self.acgan:
-                scls_z = tf.reshape(cls_z, shape=[-1, 1, 1, self.n_labels])
-                for i in range(len(z_split)):
-                    z_split[i]=tf.concat([z_split[i],scls_z],axis=-1)
+            if not new_z_dist:
+                if self.first_split_ratio>1:
+                    split_dim = self.z_dim // (self.depth - 1 + self.first_split_ratio)
+                    first_split_dim = self.z_dim - (self.depth - 1) * split_dim
+                else:
+                    split_dim = self.z_dim // self.depth
+                    first_split_dim = split_dim
+
+                split_sizes = [first_split_dim] + ([split_dim] * (self.depth - 1))
 
             if   self.img_size==64: block_info={"counts": [1, 1, 1, 1], "sa_index": 3}
             elif self.img_size==128: block_info={"counts": [1, 1, 1, 1, 1], "sa_index": 4}
@@ -238,11 +243,73 @@ class BigGAN(object):
             elif self.img_size==512: block_info={"counts": [1, 2, 1, 1, 2], "sa_index": 3}
             else: raise ValueError("Invalid image size specified: "+str(self.img_size))
 
+            if new_z_dist:
+                z_weights=[self.first_split_ratio]
+
+                first_layer_z_idx = 0
+                intermediate_layers_z_idx=[]
+                for count in block_info["counts"]:
+                    for bi in range(count):
+                        intermediate_layers_z_idx+=[len(z_weights)]
+                        z_weights+=[1.0]
+
+                if self.g_final_layer:
+                    z_weights+=[1.2]
+
+                for li in self.mixed_conv_z_idx:
+                    intermediate_layers_z_idx += [len(z_weights)]
+                    z_weights+=[0.65]
+
+                total_weight = sum(z_weights)
+
+                split_sizes = [0]*len(z_weights)
+                for i, w in reversed(list(enumerate(z_weights))):
+                    split_sizes[i] = int(w/total_weight*self.z_dim)
+
+                split_sizes[0]+=self.z_dim - sum(split_sizes)
+
+            z_split = tf.split(z, num_or_size_splits=split_sizes, axis=-1)
+            zvec_sizes = split_sizes[:]
+
+            next_zi = 0
+            def next_z_split():
+                nonlocal next_zi
+                zi = next_zi
+                next_zi+=1
+                return z_split[zi], split_sizes[zi], zvec_sizes[zi]
+
+            if self.acgan:
+                scls_z = tf.reshape(cls_z, shape=[-1, 1, 1, self.n_labels])
+                for i in range(len(z_split)):
+                    z_split[i] = tf.concat([z_split[i],scls_z],axis=-1)
+                    zvec_sizes[i]+=self.n_labels
+
+            if new_z_dist and self.g_other_level_dense_layer:
+
+                dense_z_idx = []
+                if self.g_first_level_dense_layer:
+                    dense_z_idx += [first_layer_z_idx]
+                if self.g_other_level_dense_layer:
+                    dense_z_idx += intermediate_layers_z_idx[:]
+
+                for zi in dense_z_idx:
+                    with tf.variable_scope('z'+str(zi)):
+                        factor = 1.5 if zi==first_layer_z_idx else 1.0
+                        f_width = self.round_up((split_sizes[zi]*0.75 + zvec_sizes[zi]*0.5)*factor, 8)
+                        layer_z = fully_connected(z_split[zi], units=f_width, scope='dense1', opt=opt)
+                        layer_z = opt["act"](layer_z)
+                        z_split[zi] = layer_z
+                        zvec_sizes[zi] = f_width
+
+
+
             ch_mul = 2**(len(block_info["counts"])-1)
             ch = self.g_channels_for_block(0, len(block_info["counts"]))
 
-            if self.g_first_level_dense_layer:
-                f_width = self.round_up((first_split_dim+self.n_labels)*1.85,8)
+            layer_z, z_dim, *_ = next_z_split()
+            if self.g_first_level_dense_layer and not new_z_dist:
+                # if new_z_dist is true, dense layer is handled earlier
+                f_width = self.round_up((z_dim+self.n_labels)*1.85,8)
                 if opt["act"]==relu:
                     # omit scope for backward compatibility
                     x=fully_connected(z_split[0], units=f_width, scope='dense1', opt=opt)
@@ -250,29 +317,32 @@ class BigGAN(object):
                     x=fully_connected(x, units=4*4*ch, scope='dense2', opt=opt)
                 else:
                     with tf.variable_scope('first'):
-                        x=fully_connected(z_split[0], units=f_width, scope='dense1', opt=opt)
+                        x=fully_connected(layer_z, units=f_width, scope='dense1', opt=opt)
                         x=opt["act"](x)
                         x=fully_connected(x, units=4 * 4 * ch, scope='dense2', opt=opt)
-            else: x=fully_connected(z_split[0], units=4*4*ch, scope='dense', opt=opt)
+            else: x=fully_connected(layer_z, units=4*4*ch, scope='first/dense' if new_z_dist else 'dense', opt=opt)
 
             x=tf.reshape(x, shape=[-1, 4, 4, ch])
 
-            z_i = 1
             b_i = 0
-
             for block_count in block_info["counts"]:
                 scope='resblock_up_'+str(ch_mul)
                 for sb_i in range(block_count):
+
+                    layer_z, z_dim, *_ = next_z_split()
+
                     if block_count>1: scope=scope+'_'+str(sb_i)
-                    if self.g_other_level_dense_layer:
+
+                    if self.g_other_level_dense_layer and not new_z_dist:
+                        # if new_z_dist is true, dense layer is handled earlier
                         with tf.variable_scope('z'+str(ch_mul)):
-                            f_width = self.round_up((split_dim+self.n_labels)*1.25,8)
-                            block_z = fully_connected(z_split[z_i], units=f_width, scope='dense1', opt=opt)
+                            f_width = self.round_up((z_dim+self.n_labels)*1.25,8)
+                            block_z = fully_connected(layer_z, units=f_width, scope='dense1', opt=opt)
                             block_z = opt["act"](block_z)
                     else:
-                        block_z = z_split[z_i]
+                        block_z = layer_z
+
                     x=resblock_up_condition(x, block_z, channels=ch, use_bias=False, opt=opt, scope=scope)
-                    z_i+=1
 
                 b_i+=1
                 if b_i==block_info["sa_index"]:
@@ -300,11 +370,13 @@ class BigGAN(object):
 
                     use_bias = True
 
+                    layer_z, z_dim, *_ = next_z_split()
+
                     if use_bias:
                         zfi_ch = final_channels * 2
                     else:
-                        zfi_ch = split_dim * 2
-                    final = fully_connected(z_split[self.depth - 1], units=zfi_ch, scope='dense', opt=opt)
+                        zfi_ch = z_dim * 2
+                    final = fully_connected(layer_z, units=zfi_ch, scope='dense', opt=opt)
                     final = opt["act"](final)
                     final_scale = fully_connected(final, units=final_channels, scope='dense2', opt=opt)
                     final_scale = tf.reshape(final_scale, shape=[-1, 1, 1, final_channels])
@@ -315,7 +387,12 @@ class BigGAN(object):
 
                     if self.g_final_mixed_conv:
                         for i in range(0,self.g_final_mixed_conv_stacks):
-                            x = clown_conv(x, self.ch, scope="clown"+('' if i==0 else str(i+1)), opt=opt)
+                            layer_z = None
+                            if i in self.mixed_conv_z_idx:
+                                layer_z, z_dim, *_ = next_z_split()
+
+                            x = clown_conv(x, self.ch, scope="clown"+('' if i==0 else str(i+1)), opt=opt, z=layer_z)
+
                             if self.g_final_layer_shortcuts and (i+1)>=lsa_i:
                                 s_units = final_slice_units if (i==self.g_final_mixed_conv_stacks-1) else slice_units
                                 slices.append(conv(x, channels=s_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='slice'+str(i+2)))

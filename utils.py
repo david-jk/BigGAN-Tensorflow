@@ -229,3 +229,7 @@ def orthogonal_regularizer_fc(scale, type='ortho') :
         return scale * ortho_loss
 
     return ortho_reg_fully
+
+def parse_int_list(str):
+    if str=='none' or str=='': return []
+    return [int(x.strip()) for x in str.split(",")]

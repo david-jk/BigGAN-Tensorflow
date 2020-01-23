@@ -213,7 +213,7 @@ def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
 
     return x + x_init
 
-def clown_conv(x, channels, opt, use_bias=True, scope='clown'):
+def clown_conv(x, channels, opt, use_bias=True, scope='clown', z=None):
 
     split_ch = channels//8
     rest_split = channels - split_ch*7
@@ -229,7 +229,10 @@ def clown_conv(x, channels, opt, use_bias=True, scope='clown'):
         dilconv5 = conv(x, split_ch, kernel=5, stride=1, pad=4, dilation=2, use_bias=use_bias, scope="dilconv5", opt=opt)
 
         concat = tf.concat([deconv4, deconv3, deconv2, conv3, conv5, dilconv5], axis=-1)
-        concat = batch_norm(concat, opt=opt)
+        if z!=None:
+            concat = condition_batch_norm(concat, z, opt=opt)
+        else:
+            concat = batch_norm(concat, opt=opt)
         concat = prelu(concat)
 
         return concat
