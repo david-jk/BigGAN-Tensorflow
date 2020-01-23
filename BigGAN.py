@@ -633,44 +633,50 @@ class BigGAN(object):
             self.zero_cls_z = None
             self.cls_z = None
 
-        # output of D for fake images
-        fake_images = self.generator(self.z,self.cls_z)
-        d_outputs_fake = self.discriminator(fake_images, reuse=True)
-        fake_logits = d_outputs_fake["real"]
-
-        if self.acgan:
-            fake_cls_logits = d_outputs_fake["cls"]
-
-        if self.z_reconstruct:
-            self.reconstructed_z = tf.reshape(d_outputs_fake["z"], shape=[-1, 1, 1, self.z_dim])
-
-        if self.use_gradient_penalty:
-            GP = self.gradient_penalty(real=self.inputs, fake=fake_images)
-        else:
-            GP = 0
-
         self.d_classification_loss = 0
-        self.z_reconstruct_loss = 0
 
         if self.acgan:
             cls_weights = tf.constant(self.cls_loss_weights, dtype=gan_dtype)
 
-            def cls_loss(truth,answer):
-                if self.cls_loss_type == 'logistic':
-                    return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=truth,logits=answer)*cls_weights)
-                elif self.cls_loss_type == 'euclidean':
-                    return tf.norm((answer - truth) * cls_weights, ord='euclidean')
+            def cls_loss(truth, answer):
+                if self.cls_loss_type=='logistic':
+                    return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=truth, logits=answer)*cls_weights)
+                elif self.cls_loss_type=='euclidean':
+                    return tf.norm((answer-truth)*cls_weights, ord='euclidean')
                 else:
                     raise ValueError("Invalid label loss type: "+self.cls_loss_type)
 
-            self.d_classification_loss = self.d_cls_loss_weight * cls_loss(self.label_input,real_cls_logits)
+            self.d_classification_loss = self.d_cls_loss_weight*cls_loss(self.label_input, real_cls_logits)
 
-        if self.z_reconstruct:
-            loss_f = tf.constant(1.0/self.z_dim)
-            self.z_reconstruct_loss = tf.norm(self.z - self.reconstructed_z, ord='euclidean') * loss_f
+        # output of D for fake images
+        def get_d_loss(fake_images):
+            d_outputs_fake = self.discriminator(fake_images, reuse=True)
+            fake_logits = d_outputs_fake["real"]
 
-        # get loss for discriminator
-        self.d_loss = (discriminator_loss(self.d_loss_func, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss + (self.z_reconstruct_loss*5.0)
+            fake_cls_logits = 0
+            if self.acgan:
+                fake_cls_logits = d_outputs_fake["cls"]
+
+            if self.z_reconstruct:
+                reconstructed_z = tf.reshape(d_outputs_fake["z"], shape=[-1, 1, 1, self.z_dim])
+
+            if self.use_gradient_penalty:
+                GP = self.gradient_penalty(real=self.inputs, fake=fake_images)
+            else:
+                GP = 0
+
+            z_reconstruct_loss = 0
+
+            if self.z_reconstruct:
+                loss_f = tf.constant(1.0/self.z_dim)
+                z_reconstruct_loss = tf.norm(self.z - reconstructed_z, ord='euclidean') * loss_f
+
+            # get loss for discriminator
+            d_loss = (discriminator_loss(self.d_loss_func, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss + (z_reconstruct_loss*5.0)
+
+            return d_loss, fake_logits, fake_cls_logits, z_reconstruct_loss
+
+        self.d_loss, fake_logits, fake_cls_logits, self.z_reconstruct_loss, *_ = get_d_loss(self.generator(self.z,self.cls_z))
 
         self.g_classification_loss = 0
 
