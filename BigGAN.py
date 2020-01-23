@@ -101,6 +101,7 @@ class BigGAN(object):
         self.g_regularization_factor = args.g_regularization_factor
 
         self.z_dim = args.z_dim  # dimension of noise-vector
+        self.shared_z_dim = args.shared_z
         self.first_split_ratio = args.first_split_ratio
         if self.z_dim%self.depth!=0 and self.first_split_ratio==1:
             self.z_dim=self.z_dim + self.depth - self.z_dim%self.depth
@@ -233,7 +234,7 @@ class BigGAN(object):
 
         with tf.variable_scope("generator", reuse=reuse, custom_getter=custom_getter):
 
-            new_z_dist = bool(self.mixed_conv_z_idx) or self.cls_embedding
+            new_z_dist = bool(self.mixed_conv_z_idx) or self.cls_embedding or self.shared_z_dim>0
 
             if not new_z_dist:
                 if self.first_split_ratio>1:
@@ -252,9 +253,15 @@ class BigGAN(object):
             else: raise ValueError("Invalid image size specified: "+str(self.img_size))
 
             if new_z_dist:
-                z_weights=[self.first_split_ratio]
+                z_weights=[]
 
-                first_layer_z_idx = 0
+                if self.shared_z_dim>0:
+                    shared_z_idx = len(z_weights)
+                    z_weights+=[0.0]
+
+                first_layer_z_idx = len(z_weights)
+                z_weights+=[self.first_split_ratio]
+
                 intermediate_layers_z_idx=[]
                 for count in block_info["counts"]:
                     for bi in range(count):
@@ -270,11 +277,15 @@ class BigGAN(object):
 
                 total_weight = sum(z_weights)
 
+                nonshared_z_dim = self.z_dim - self.shared_z_dim
+
                 split_sizes = [0]*len(z_weights)
                 for i, w in reversed(list(enumerate(z_weights))):
-                    split_sizes[i] = int(w/total_weight*self.z_dim)
+                    split_sizes[i] = int(w/total_weight*nonshared_z_dim)
 
-                split_sizes[0]+=self.z_dim - sum(split_sizes)
+                split_sizes[first_layer_z_idx]+=nonshared_z_dim - sum(split_sizes)
+                if self.shared_z_dim>0:
+                    split_sizes[shared_z_idx] = self.shared_z_dim
 
             z_split = tf.split(z, num_or_size_splits=split_sizes, axis=-1)
             zvec_sizes = split_sizes[:]
@@ -300,7 +311,24 @@ class BigGAN(object):
                     z_split[i] = tf.concat([z_split[i],cls_z],axis=-1)
                     zvec_sizes[i]+=clsz_size
 
-            if new_z_dist and self.g_other_level_dense_layer:
+            if self.shared_z_dim>0:
+                shared_z, z_dim, *_ = next_z_split()
+                f_width = self.round_up(z_dim*1.5, 8)
+                with tf.variable_scope('shared_z'):
+                    shared_z = fully_connected(shared_z, units=f_width, scope='dense1', opt=opt)
+                    shared_z = opt["act"](shared_z)
+                    shared_z = tf.reshape(shared_z, shape=[-1, 1, 1, f_width])
+                z_split[shared_z_idx] = shared_z
+                zvec_sizes[shared_z_idx] = f_width
+                self.shared_z = shared_z
+                self.shared_z_vdim = f_width
+
+                for i in range(len(z_split)):
+                    if i==shared_z_idx: continue
+                    z_split[i] = tf.concat([z_split[i],self.shared_z],axis=-1)
+                    zvec_sizes[i]+=self.shared_z_vdim
+
+            if new_z_dist and (self.g_first_level_dense_layer or self.g_other_level_dense_layer):
 
                 dense_z_idx = []
                 if self.g_first_level_dense_layer:
