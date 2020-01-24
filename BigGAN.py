@@ -22,7 +22,7 @@ class BigGAN(object):
             self.request_dir = args.request_dir
 
         self.epoch = args.epoch
-        self.iteration = args.iteration
+        self.iterations_per_epoch = args.iteration
         self.batch_size = args.batch_size
         self.virtual_batches = args.virtual_batches
         self.print_freq = args.print_freq
@@ -175,7 +175,7 @@ class BigGAN(object):
         print("# dataset number:", self.dataset_num)
         print("# batch_size:", self.batch_size)
         print("# epoch:", self.epoch)
-        print("# iteration per epoch:", self.iteration)
+        print("# iterations per epoch:", self.iterations_per_epoch)
 
         print()
 
@@ -721,38 +721,35 @@ class BigGAN(object):
             g_vars_alt = [var for var in t_vars if ('generator' in var.name and not '/final/' in var.name)]
 
         # optimizers
-        if self.virtual_batches > 1:
+        self.d_opt = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2)
+        self.opt = MovingAverageOptimizer(
+            tf.train.AdamOptimizer(self.g_learning_rate, beta1=self.beta1, beta2=self.beta2),
+            average_decay=self.moving_decay)
+        ema = self.opt._ema
 
-            self.d_opt = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2)
+        self.g_ops = create_train_ops(self.opt, self.g_loss, g_vars, self.virtual_batches)
+        self.d_ops = create_train_ops(self.d_opt, self.d_loss, d_vars, self.virtual_batches)
 
-            self.opt = MovingAverageOptimizer(
-                tf.train.AdamOptimizer(self.g_learning_rate, beta1=self.beta1, beta2=self.beta2),
-                average_decay=self.moving_decay)
-            ema = self.opt._ema
+        self.g_ops["losses"]["g_loss"] = self.g_loss
+        self.g_ops["losses"]["g_cls_loss"] = self.g_classification_loss
 
-            def virtual_batch_steps(opt, loss, vars):
-                grad_factor = tf.constant(1.0/self.virtual_batches, dtype=gan_dtype)
-                acc_vars = [tf.Variable(tf.zeros_like(v.read_value()), trainable=False, collections=[tf.GraphKeys.LOCAL_VARIABLES]) for v in vars]
-                zero_ops = [v.assign(tf.zeros_like(v)) for v in acc_vars]
-                with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-                    grads = opt.compute_gradients(loss, var_list=vars)
-                acc_ops = [acc_vars[i].assign_add(gv[0]) for i, gv in enumerate(grads)]
-                step = opt.apply_gradients([(acc_vars[i]*grad_factor, gv[1]) for i, gv in enumerate(grads)])
-                return zero_ops, acc_ops, step
+        self.d_ops["losses"]["d_loss"] = self.d_loss
+        self.d_ops["losses"]["d_cls_loss"] = self.d_classification_loss
+        if self.z_reconstruct:
+            self.d_ops["losses"]["d_recon"] = self.z_reconstruct_loss
 
-            self.g_zero_step, self.g_acc_steps, self.g_train_step = virtual_batch_steps(self.opt, self.g_loss, g_vars)
-            self.d_zero_step, self.d_acc_steps, self.d_train_step = virtual_batch_steps(self.d_opt, self.d_loss, d_vars)
+        if self.alternative_head:
+            self.g_ops_alt = create_train_ops(self.opt, self.g_loss_alt, g_vars_alt, self.virtual_batches)
+            self.d_ops_alt = create_train_ops(self.d_opt, self.d_loss_alt, d_vars, self.virtual_batches)
 
-            if self.alternative_head:
-                self.g_zero_step_alt, self.g_acc_steps_alt, self.g_train_step_alt = virtual_batch_steps(self.opt, self.g_loss_alt, g_vars_alt)
-                self.d_zero_step_alt, self.d_acc_steps_alt, self.d_train_step_alt = virtual_batch_steps(self.d_opt, self.d_loss_alt, d_vars)
+            self.g_ops["losses"]["g_loss_alt"] = self.g_loss_alt
+            self.g_ops["losses"]["g_cls_loss_alt"] = self.g_classification_loss_alt
 
-        else:
-            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-                self.d_optim = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2).minimize(self.d_loss, var_list=d_vars)
-                self.opt = MovingAverageOptimizer(tf.train.AdamOptimizer(self.g_learning_rate, beta1=self.beta1, beta2=self.beta2), average_decay=self.moving_decay)
-                ema = self.opt._ema
-                self.g_optim = self.opt.minimize(self.g_loss, var_list=g_vars)
+            self.d_ops["losses"]["d_loss_alt"] = self.d_loss_alt
+            self.d_ops["losses"]["d_cls_loss_alt"] = self.d_classification_loss
+            if self.z_reconstruct:
+                self.d_ops["losses"]["d_recon_alt"] = self.z_reconstruct_loss_alt
+
 
         """" Testing """
         # for test
@@ -794,150 +791,83 @@ class BigGAN(object):
                 self.sample_fake_images_noema = self.generator(self.test_z, self.zero_cls_z, is_training=False, reuse=True)
 
 
-
-        """ Summary """
-        self.d_sum = tf.summary.scalar("d_loss", self.d_loss)
-        self.g_sum = tf.summary.scalar("g_loss", self.g_loss)
-        self.dc_sum = tf.summary.scalar("d_cls_loss", self.d_classification_loss)
-        self.gc_sum = tf.summary.scalar("g_cls_loss", self.g_classification_loss)
-
-    ##################################################################################
-    # Train
-    ##################################################################################
-
     def train(self):
-        # initialize all variables
+
         tf.global_variables_initializer().run()
-
-        # saver to save model
         self.saver = self.opt.swapping_saver(max_to_keep=self.keep_checkpoints)
-
-        # summary writer
         self.writer = tf.summary.FileWriter(self.log_dir + '/' + self.model_dir, self.sess.graph)
 
-        # restore check-point if it exits
         could_load, checkpoint_counter = self.load(self.checkpoint_dir)
         if could_load:
-            start_epoch = (int)(checkpoint_counter / self.iteration)
-            start_batch_id = checkpoint_counter - start_epoch * self.iteration
+            start_epoch = (int)(checkpoint_counter / self.iterations_per_epoch)
+            start_batch_id = checkpoint_counter - start_epoch * self.iterations_per_epoch
             counter = checkpoint_counter
 
             print(" [*] Load SUCCESS")
         else:
             start_epoch = 0
             start_batch_id = 0
-            counter = 1
+            counter = 0
             print(" [!] Load failed...")
 
-        # loop for epoch
         start_time = time.time()
-        past_g_loss = -1.
-        past_g_cls_loss = -1.
+
         for epoch in range(start_epoch, self.epoch):
-            # get batch data
-            for idx in range(start_batch_id, self.iteration):
+            for idx in range(start_batch_id, self.iterations_per_epoch):
+
+                losses = {}
+                summaries = []
+
+                def add_losses(loss):
+                    nonlocal losses
+                    losses = {**losses, **loss}
+
+                def add_summaries(summary):
+                    nonlocal summaries
+                    summaries += summary
 
                 # update D network
-                if self.acgan:
-
-                    if self.virtual_batches > 1:
-
-                        self.sess.run(self.d_zero_step,feed_dict=self.rnd_cls_feed_dict())
-
-                        d_loss = 0
-                        d_cls_loss = 0
-                        for i in range(self.virtual_batches):
-                            summary_str, s2_str, loss, cls_loss, *_ = self.sess.run([self.d_sum, self.dc_sum, self.d_loss, self.d_classification_loss] + self.d_acc_steps,feed_dict=self.rnd_cls_feed_dict())
-                            d_loss += loss
-                            d_cls_loss += cls_loss
-
-                        self.sess.run(self.d_train_step)
-
-                        d_loss /= self.virtual_batches
-                        d_cls_loss /= self.virtual_batches
-
-                    else:
-                        _, summary_str, s2_str, d_loss, d_cls_loss = self.sess.run([self.d_optim, self.d_sum, self.dc_sum, self.d_loss, self.d_classification_loss],feed_dict=self.rnd_cls_feed_dict())
-
-                    self.writer.add_summary(summary_str, counter)
-                    self.writer.add_summary(s2_str, counter)
-                else:
-                    if self.virtual_batches>1:
-
-                        self.sess.run(self.d_zero_step)
-
-                        d_loss = 0
-                        for i in range(self.virtual_batches):
-                            summary_str, loss, *_ = self.sess.run([self.d_sum, self.d_loss] + self.d_acc_steps)
-                            d_loss += loss
-
-                        self.sess.run(self.d_train_step)
-
-                        d_loss /= self.virtual_batches
-
-                    else:
-                        _, summary_str, d_loss = self.sess.run([self.d_optim, self.d_sum, self.d_loss])
-
-                    self.writer.add_summary(summary_str, counter)
+                d_feed_dict = self.rnd_cls_feed_dict() if self.acgan else None
+                d_losses, _, d_summaries, *__ = run_ops(self.sess, self.d_ops, feed_dict=d_feed_dict, create_summaries=True)
+                add_losses(d_losses)
+                add_summaries(d_summaries)
 
                 # update G network
-                g_loss = None
-                g_cls_loss = None
-                if (counter - 1) % self.n_critic == 0:
-                    if self.acgan:
-                        if self.virtual_batches > 1:
+                if (counter-1) % self.n_critic==0:
+                    g_feed_dict = self.rnd_cls_feed_dict() if self.acgan else None
+                    g_losses, _, g_summaries, *__ = run_ops(self.sess, self.g_ops, feed_dict=g_feed_dict, create_summaries=True)
+                    add_losses(g_losses)
+                    add_summaries(g_summaries)
 
-                            self.sess.run(self.g_zero_step,feed_dict=self.rnd_cls_feed_dict())
+                if self.alternative_head:
+                    # update D network with second generator head
+                    d_feed_dict = self.rnd_cls_feed_dict() if self.acgan else None
+                    d_losses, _, d_summaries, *__ = run_ops(self.sess, self.d_ops_alt, feed_dict=d_feed_dict, create_summaries=True)
+                    add_losses(d_losses)
+                    add_summaries(d_summaries)
 
-                            g_loss = 0
-                            g_cls_loss = 0
-                            for i in range(self.virtual_batches):
-                                summary_str, s2_str, loss, cls_loss, *_ = self.sess.run([self.g_sum, self.gc_sum, self.g_loss, self.g_classification_loss] + self.g_acc_steps,feed_dict=self.rnd_cls_feed_dict())
-                                g_loss += loss
-                                g_cls_loss += cls_loss
+                    # update G network with second generator head
+                    if (counter-1)%self.n_critic==0:
+                        g_feed_dict = self.rnd_cls_feed_dict() if self.acgan else None
+                        g_losses, _, g_summaries, *__ = run_ops(self.sess, self.g_ops_alt, feed_dict=g_feed_dict, create_summaries=True)
+                        add_losses(g_losses)
+                        add_summaries(g_summaries)
 
-                            self.sess.run(self.g_train_step)
-
-                            g_loss /= self.virtual_batches
-                            g_cls_loss /= self.virtual_batches
-                        else:
-                            _, summary_str, s2_str, g_loss, g_cls_loss = self.sess.run([self.g_optim, self.g_sum, self.gc_sum, self.g_loss, self.g_classification_loss],feed_dict=self.rnd_cls_feed_dict())
-
-                        self.writer.add_summary(summary_str, counter)
-                        self.writer.add_summary(s2_str, counter)
-                        past_g_loss = g_loss
-                        past_g_cls_loss = g_cls_loss
-                    else:
-                        if self.virtual_batches > 1:
-
-                            self.sess.run(self.g_zero_step)
-
-                            g_loss = 0
-                            for i in range(self.virtual_batches):
-                                summary_str, loss, *_ = self.sess.run([self.g_sum, self.g_loss]+self.g_acc_steps)
-                                g_loss += loss
-
-                            self.sess.run(self.g_train_step)
-
-                            g_loss /= self.virtual_batches
-                        else:
-                            _, summary_str, g_loss = self.sess.run([self.g_optim, self.g_sum, self.g_loss])
-
-                        self.writer.add_summary(summary_str, counter)
-                        past_g_loss = g_loss
+                for summary in summaries:
+                    self.writer.add_summary(summary, counter)
 
                 # display training status
                 counter += 1
-                if g_loss == None:
-                    g_loss = past_g_loss
-                    if self.acgan: g_cls_loss = past_g_cls_loss
 
-                if self.acgan:
-                    print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, d_cls_loss: %.8f x%.1f, g_loss: %.8f, g_cls_loss: %.8f x%.1f" \
-                          % (epoch, idx, self.iteration, time.time() - start_time, d_loss, d_cls_loss, self.d_cls_loss_weight, g_loss, g_cls_loss, self.g_cls_loss_weight))
-                else:
-                    print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
-                                  % (epoch, idx, self.iteration, time.time() - start_time, d_loss, g_loss))
+                step = epoch*self.iterations_per_epoch + counter
+                print_args = [step, time.time() - start_time]
+                print_str = "Step: %5d, time: %4.4f"
+
+                for loss_name, loss in losses.items():
+                    print_str+=", "+loss_name+": %.4f"
+                    print_args+=[loss]
+
+                print(print_str % tuple(print_args))
 
                 sys.stdout.flush()
 

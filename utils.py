@@ -233,3 +233,84 @@ def orthogonal_regularizer_fc(scale, type='ortho') :
 def parse_int_list(str):
     if str=='none' or str=='': return []
     return [int(x.strip()) for x in str.split(",")]
+
+
+def virtual_batch_steps(opt, loss, vars, virtual_batches):
+    grad_factor = tf.constant(1.0/virtual_batches, dtype=gan_dtype)
+    acc_vars = [tf.Variable(tf.zeros_like(v.read_value()), trainable=False, collections=[tf.GraphKeys.LOCAL_VARIABLES]) for v in vars]
+    zero_ops = [v.assign(tf.zeros_like(v)) for v in acc_vars]
+    with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+        grads = opt.compute_gradients(loss, var_list=vars)
+    acc_ops = [acc_vars[i].assign_add(gv[0]) for i, gv in enumerate(grads)]
+    step = opt.apply_gradients([(acc_vars[i]*grad_factor, gv[1]) for i, gv in enumerate(grads)])
+    return zero_ops, acc_ops, step
+
+def create_train_ops(opt, loss, vars, virtual_batches):
+    ops = {}
+    ops["losses"] = {}
+    ops["steps"] = virtual_batches
+
+    if virtual_batches==1:
+        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+            ops["init_op"] = None
+            ops["step_ops"] = [opt.minimize(loss, var_list=vars)]
+            ops["final_op"] = None
+    else:
+        zero_ops, acc_ops, step = virtual_batch_steps(opt, loss, vars, virtual_batches)
+        ops["init_op"] = zero_ops
+        ops["step_ops"] = acc_ops
+        ops["final_op"] = step
+    return ops
+
+
+def run_ops(sess, ops, tensors=[], feed_dict=None, create_summaries=False):
+
+    if tensors==None:
+        tensors = []
+
+    if ops["init_op"]!=None:
+        sess.run(ops["init_op"], feed_dict=feed_dict)
+
+    if create_summaries:
+        if "summaries" not in ops:
+            ops["summaries"] = {}
+
+    losses = []
+    loss_names = []
+    loss_sums = []
+    summaries = []
+    for key, loss in ops["losses"].items():
+        losses.append(loss)
+        loss_names.append(key)
+        loss_sums.append(0)
+
+        if create_summaries:
+            if key not in ops["summaries"]:
+                ops["summaries"][key] = tf.summary.scalar(key, loss)
+            summaries.append(ops["summaries"][key])
+
+    for i in range(ops["steps"]):
+        results = list(sess.run(losses+summaries+tensors+ops["step_ops"], feed_dict=feed_dict))
+
+        summary_idx = len(losses)
+        tensor_idx = summary_idx+len(summaries)
+        op_idx = tensor_idx+len(tensors)
+
+        loss_values = results[:summary_idx]
+        summary_results = results[summary_idx:tensor_idx]
+        tensor_results = results[tensor_idx:op_idx]
+
+        for i, loss in enumerate(loss_values):
+            loss_sums[i] += loss
+
+
+    if ops["final_op"]!=None:
+        sess.run(ops["final_op"])
+
+    loss_values = {}
+    for i in range(len(loss_sums)):
+        loss_values[loss_names[i]] = loss_sums[i]/ops["steps"]
+
+    # todo: merge tensor results if steps>1
+
+    return loss_values, tensor_results, summary_results
