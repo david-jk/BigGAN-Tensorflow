@@ -78,6 +78,8 @@ class BigGAN(object):
         else:
             raise ValueError("Unknown activation function: "+str(self.activation))
 
+        self.alternative_head = args.multi_head
+
 
         if self.g_final_mixed_conv and not self.g_final_layer:
             raise ValueError("g_final_mixed_conv set, but not g_final_layer")
@@ -685,8 +687,6 @@ class BigGAN(object):
 
             return d_loss, fake_logits, fake_cls_logits, z_reconstruct_loss
 
-        self.alternative_head = False
-
         self.d_loss, fake_logits, fake_cls_logits, self.z_reconstruct_loss, *_ = get_d_loss(self.generator(self.z,self.cls_z))
 
         # build G loss
@@ -742,13 +742,13 @@ class BigGAN(object):
             self.g_ops_alt = create_train_ops(self.opt, self.g_loss_alt, g_vars_alt, self.virtual_batches)
             self.d_ops_alt = create_train_ops(self.d_opt, self.d_loss_alt, d_vars, self.virtual_batches)
 
-            self.g_ops["losses"]["g_loss_alt"] = self.g_loss_alt
-            self.g_ops["losses"]["g_cls_loss_alt"] = self.g_classification_loss_alt
+            self.g_ops_alt["losses"]["g_loss_alt"] = self.g_loss_alt
+            self.g_ops_alt["losses"]["g_cls_loss_alt"] = self.g_classification_loss_alt
 
-            self.d_ops["losses"]["d_loss_alt"] = self.d_loss_alt
-            self.d_ops["losses"]["d_cls_loss_alt"] = self.d_classification_loss
+            self.d_ops_alt["losses"]["d_loss_alt"] = self.d_loss_alt
+            self.d_ops_alt["losses"]["d_cls_loss_alt"] = self.d_classification_loss
             if self.z_reconstruct:
-                self.d_ops["losses"]["d_recon_alt"] = self.z_reconstruct_loss_alt
+                self.d_ops_alt["losses"]["d_recon_alt"] = self.z_reconstruct_loss_alt
 
 
         """" Testing """
@@ -859,8 +859,7 @@ class BigGAN(object):
                 # display training status
                 counter += 1
 
-                step = epoch*self.iterations_per_epoch + counter
-                print_args = [step, time.time() - start_time]
+                print_args = [counter, time.time() - start_time]
                 print_str = "Step: %5d, time: %4.4f"
 
                 for loss_name, loss in losses.items():
@@ -916,10 +915,8 @@ class BigGAN(object):
                         save_samples(self.sample_fake_images_noema, 'noema')
 
                     if self.alternative_head:
-                        if self.generate_ema_samples:
-                            save_samples(self.z_generator_alt_noema, 'alt_ema')
-                        if self.generate_noema_samples:
-                            save_samples(self.z_generator_alt_noema, 'alt_noema')
+                        if self.generate_ema_samples or self.generate_noema_samples:
+                            save_samples(self.z_generator_alt_noema, 'alt')
 
 
                     if self.save_morphs:
