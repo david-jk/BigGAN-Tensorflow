@@ -903,23 +903,23 @@ class BigGAN(object):
 
                         return samples
 
-                    if self.generate_ema_samples:
-                        save_images(generate_with(self.sample_fake_images)[:manifold_h * manifold_w, :, :, :],
+                    def save_samples(generator, name):
+                        save_images(generate_with(generator)[:manifold_h*manifold_w, :, :, :],
                                     [manifold_h, manifold_w],
-                                    './' + self.sample_dir + '/' + self.model_name + '_ema_{:02d}_{:05d}.png'.format(
-                                        epoch, idx + 1))
+                                    './'+self.sample_dir+'/'+self.model_name+'_'+name+'_{:02d}_{:05d}.png'.format(
+                                        epoch, idx+1))
+
+                    if self.generate_ema_samples:
+                        save_samples(self.sample_fake_images, 'ema')
 
                     if self.generate_noema_samples:
-                        save_images(generate_with(self.sample_fake_images_noema)[:manifold_h * manifold_w, :, :, :],
-                                    [manifold_h, manifold_w],
-                                    './' + self.sample_dir + '/' + self.model_name + '_noema_{:02d}_{:05d}.png'.format(
-                                        epoch, idx + 1))
+                        save_samples(self.sample_fake_images_noema, 'noema')
 
                     if self.alternative_head:
-                        save_images(generate_with(self.z_generator_alt_noema)[:manifold_h*manifold_w, :, :, :],
-                                    [manifold_h, manifold_w],
-                                    './'+self.sample_dir+'/'+self.model_name+'_alt_{:02d}_{:05d}.png'.format(
-                                        epoch, idx+1))
+                        if self.generate_ema_samples:
+                            save_samples(self.z_generator_alt_noema, 'alt_ema')
+                        if self.generate_noema_samples:
+                            save_samples(self.z_generator_alt_noema, 'alt_noema')
 
 
                     if self.save_morphs:
