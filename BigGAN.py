@@ -206,7 +206,7 @@ class BigGAN(object):
         return self.scale_channels(self.ch,self.g_grow_factor**(b_count-b_i-1))
 
 
-    def generator(self, z, cls_z, is_training=True, reuse=False, custom_getter=None):
+    def generator(self, z, cls_z, is_training=True, reuse=False, custom_getter=None, simple_head=False):
 
         opt = {"sn": self.sn,
                "is_training": is_training,
@@ -400,9 +400,12 @@ class BigGAN(object):
             x = opt["act"](x)
 
             if self.g_final_layer:
-                with tf.variable_scope('final'):
+                with tf.variable_scope('final_alt' if simple_head else 'final'):
 
-                    if self.g_final_layer_shortcuts:
+                    if simple_head:
+                        x = tf.split(x, num_or_size_splits=[self.ch//2,self.ch - self.ch//2], axis=-1)[0]
+
+                    if self.g_final_layer_shortcuts and not simple_head:
                         lsa_i = self.g_final_layer_shortcuts_after
                         slice_units = self.round_up(self.ch/(8.0-lsa_i*1.5),4)
                         final_slice_units = self.round_up(slice_units*(2.5-lsa_i*0.25),4)
@@ -430,7 +433,7 @@ class BigGAN(object):
                         final_bias = fully_connected(final, units=final_channels, scope='dense_bias', opt=opt)
                         final_bias = tf.reshape(final_bias, shape=[-1, 1, 1, final_channels])
 
-                    if self.g_final_mixed_conv:
+                    if self.g_final_mixed_conv and not simple_head:
                         for i in range(0,self.g_final_mixed_conv_stacks):
                             layer_z = None
                             if i in self.mixed_conv_z_idx:
@@ -442,7 +445,7 @@ class BigGAN(object):
                                 s_units = final_slice_units if (i==self.g_final_mixed_conv_stacks-1) else slice_units
                                 slices.append(conv(x, channels=s_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='slice'+str(i+2)))
 
-                    if self.g_final_layer_shortcuts:
+                    if self.g_final_layer_shortcuts and not simple_head:
                         x = tf.concat(slices, axis=-1)
                     else:
                         x = conv(x, channels=final_channels, kernel=3, stride=1, pad=1, use_bias=False, opt=opt)
@@ -458,7 +461,13 @@ class BigGAN(object):
                         x = conv(x, channels=24, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='conv2')
                         x = prelu(x, scope='prelu2')
 
-                x = conv(x, channels=self.c_dim, kernel=self.g_final_mixed_conv_mix_kernel, stride=1, pad=(self.g_final_mixed_conv_mix_kernel-1)//2, use_bias=False, opt=opt, scope='G_logit')
+                    if self.alternative_head:
+                        x = conv(x, channels=self.c_dim, kernel=self.g_final_mixed_conv_mix_kernel, stride=1,
+                                 pad=(self.g_final_mixed_conv_mix_kernel-1)//2, use_bias=False, opt=opt,
+                                 scope='G_logit')
+
+                if not self.alternative_head:
+                    x = conv(x, channels=self.c_dim, kernel=self.g_final_mixed_conv_mix_kernel, stride=1, pad=(self.g_final_mixed_conv_mix_kernel-1)//2, use_bias=False, opt=opt, scope='G_logit')
 
             else:
                 x = conv(x, channels=self.c_dim, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='G_logit')
@@ -676,23 +685,40 @@ class BigGAN(object):
 
             return d_loss, fake_logits, fake_cls_logits, z_reconstruct_loss
 
+        self.alternative_head = False
+
         self.d_loss, fake_logits, fake_cls_logits, self.z_reconstruct_loss, *_ = get_d_loss(self.generator(self.z,self.cls_z))
 
+        # build G loss
         self.g_classification_loss = 0
-
         if self.acgan:
             self.g_classification_loss = self.g_cls_loss_weight * cls_loss(self.cls_z,fake_cls_logits)
 
-        # get loss for generator
         self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss) + (self.z_reconstruct_loss*5.0)
         if self.g_regularization_method!='none':
             self.g_loss = tf.add_n([self.g_loss] + tf.losses.get_regularization_losses())
+
+        if self.alternative_head:
+            self.d_loss_alt, fake_logits_alt, fake_cls_logits_alt, self.z_reconstruct_loss_alt, *_ = get_d_loss(
+                self.generator(self.z, self.cls_z, reuse=tf.AUTO_REUSE, simple_head=True))
+
+            g_classification_loss_alt = 0
+            if self.acgan:
+                self.g_classification_loss_alt = self.g_cls_loss_weight*cls_loss(self.cls_z, fake_cls_logits_alt)
+
+            self.g_loss_alt = generator_loss(self.gan_type, fake=fake_logits_alt, real=real_logits)+(self.g_classification_loss_alt)+(
+                        self.z_reconstruct_loss_alt*5.0)
+            if self.g_regularization_method!='none':
+                self.g_loss_alt = tf.add_n([self.g_loss_alt]+tf.losses.get_regularization_losses())
 
         """ Training """
         # divide trainable variables into a group for D and a group for G
         t_vars = tf.trainable_variables()
         d_vars = [var for var in t_vars if 'discriminator' in var.name]
-        g_vars = [var for var in t_vars if 'generator' in var.name]
+        g_vars = [var for var in t_vars if ('generator' in var.name and not '/final_alt/' in var.name)]
+
+        if self.alternative_head:
+            g_vars_alt = [var for var in t_vars if ('generator' in var.name and not '/final/' in var.name)]
 
         # optimizers
         if self.virtual_batches > 1:
@@ -717,6 +743,10 @@ class BigGAN(object):
             self.g_zero_step, self.g_acc_steps, self.g_train_step = virtual_batch_steps(self.opt, self.g_loss, g_vars)
             self.d_zero_step, self.d_acc_steps, self.d_train_step = virtual_batch_steps(self.d_opt, self.d_loss, d_vars)
 
+            if self.alternative_head:
+                self.g_zero_step_alt, self.g_acc_steps_alt, self.g_train_step_alt = virtual_batch_steps(self.opt, self.g_loss_alt, g_vars_alt)
+                self.d_zero_step_alt, self.d_acc_steps_alt, self.d_train_step_alt = virtual_batch_steps(self.d_opt, self.d_loss_alt, d_vars)
+
         else:
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                 self.d_optim = tf.train.AdamOptimizer(self.d_learning_rate, beta1=self.beta1, beta2=self.beta2).minimize(self.d_loss, var_list=d_vars)
@@ -737,6 +767,9 @@ class BigGAN(object):
         if self.static_sample_z or self.save_morphs:
             self.sample_z = tf.placeholder(gan_dtype, [self.batch_size, 1, 1, self.z_dim], name='sample_z')
             self.z_generator = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False, custom_getter=ema_getter)
+            if self.alternative_head:
+                self.z_generator_alt = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False, custom_getter=ema_getter, simple_head=True)
+                self.z_generator_alt_noema = self.generator(self.sample_z, self.cls_z, reuse=True, is_training=False, simple_head=True)
 
         if self.static_sample_z:
             rounded_n = self.round_up(self.sample_num, self.batch_size)
@@ -951,6 +984,13 @@ class BigGAN(object):
                                     [manifold_h, manifold_w],
                                     './' + self.sample_dir + '/' + self.model_name + '_noema_{:02d}_{:05d}.png'.format(
                                         epoch, idx + 1))
+
+                    if self.alternative_head:
+                        save_images(generate_with(self.z_generator_alt_noema)[:manifold_h*manifold_w, :, :, :],
+                                    [manifold_h, manifold_w],
+                                    './'+self.sample_dir+'/'+self.model_name+'_alt_{:02d}_{:05d}.png'.format(
+                                        epoch, idx+1))
+
 
                     if self.save_morphs:
 
