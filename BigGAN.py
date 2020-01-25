@@ -48,6 +48,8 @@ class BigGAN(object):
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
         self.g_other_level_dense_layer = args.g_other_level_dense_layer
         self.d_cls_dense_layers = args.d_cls_dense_layers
+        self.g_mixed_resblocks = args.g_mixed_resblocks
+        self.g_mixed_resblock_ch_div = args.g_mixed_resblock_ch_div
         self.g_final_layer = args.g_final_layer
         self.g_final_layer_extra = args.g_final_layer_extra
         self.g_final_layer_shortcuts = args.g_final_layer_shortcuts
@@ -394,6 +396,9 @@ class BigGAN(object):
                 b_i+=1
                 if b_i==block_info["sa_index"]:
                     x=self_attention_2(x, channels=ch, opt=opt, scope='self_attention')
+
+                if self.g_mixed_resblocks:
+                    x = mixed_resblock(x, self.round_up(ch/self.g_mixed_resblock_ch_div, 8), ch, opt=opt, scope='res_mixed'+str(ch_mul))
 
                 ch = self.g_channels_for_block(b_i, len(block_info["counts"]))
                 ch_mul=ch_mul//2

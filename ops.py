@@ -249,6 +249,12 @@ def clown_conv(x, channels, opt, use_bias=True, scope='clown', z=None):
 
         return concat
 
+def mixed_resblock(x, inner_channels, out_channels, opt, use_bias=False, z=None, scope='res_mixed'):
+    with tf.variable_scope(scope):
+        res = clown_conv(x, inner_channels, scope="clown", opt=opt, z=z)
+        res = conv(res, channels=out_channels, kernel=1, stride=1, pad=0, use_bias=False, opt=opt, scope='proj')
+    return x + res
+
 
 def self_attention(x, channels, opt, scope='self_attention'):
     with tf.variable_scope(scope):
