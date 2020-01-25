@@ -47,6 +47,7 @@ class BigGAN(object):
         self.weight_file = args.weight_file
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
         self.g_other_level_dense_layer = args.g_other_level_dense_layer
+        self.g_z_dense_concat = args.g_z_dense_concat
         self.d_cls_dense_layers = args.d_cls_dense_layers
         self.g_mixed_resblocks = args.g_mixed_resblocks
         self.g_mixed_resblock_ch_div = args.g_mixed_resblock_ch_div
@@ -239,7 +240,7 @@ class BigGAN(object):
 
         with tf.variable_scope("generator", reuse=reuse, custom_getter=custom_getter):
 
-            new_z_dist = bool(self.mixed_conv_z_idx) or self.cls_embedding or self.shared_z_dim>0
+            new_z_dist = bool(self.mixed_conv_z_idx) or self.cls_embedding or self.shared_z_dim>0 or self.g_z_dense_concat
 
             if not new_z_dist:
                 if self.first_split_ratio>1:
@@ -311,22 +312,36 @@ class BigGAN(object):
                         clsz_size = self.cls_embedding_size
 
                 cls_z = tf.reshape(cls_z, shape=[-1, 1, 1, clsz_size])
+                self.cls_z_embedding = cls_z
 
                 for i in range(len(z_split)):
-                    z_split[i] = tf.concat([z_split[i],cls_z],axis=-1)
-                    zvec_sizes[i]+=clsz_size
+                    if self.g_z_dense_concat and self.shared_z_dim>0 and i==shared_z_idx:
+                        continue
+                    z_split[i] = tf.concat([z_split[i], cls_z], axis=-1)
+                    zvec_sizes[i] += clsz_size
 
             if self.shared_z_dim>0:
                 shared_z, z_dim, *_ = next_z_split()
-                f_width = self.round_up(z_dim*1.5, 8)
+
                 with tf.variable_scope('shared_z'):
-                    shared_z = fully_connected(shared_z, units=f_width, scope='dense1', opt=opt)
-                    shared_z = opt["act"](shared_z)
-                    shared_z = tf.reshape(shared_z, shape=[-1, 1, 1, f_width])
+                    if self.g_z_dense_concat:
+                        f_width = self.round_up(z_dim*0.5, 8)
+                        f_in = tf.concat([shared_z, self.cls_z_embedding], axis=-1)
+                        dense_shared_z = fully_connected(f_in, units=f_width, scope='dense1', opt=opt)
+                        dense_shared_z = opt["act"](dense_shared_z)
+                        dense_shared_z = tf.reshape(dense_shared_z, shape=[-1, 1, 1, f_width])
+                        shared_z = tf.concat([shared_z, dense_shared_z], axis=-1)
+                        zvec_sizes[shared_z_idx] += f_width
+                    else:
+                        f_width = self.round_up(z_dim*1.5, 8)
+                        shared_z = fully_connected(shared_z, units=f_width, scope='dense1', opt=opt)
+                        shared_z = opt["act"](shared_z)
+                        shared_z = tf.reshape(shared_z, shape=[-1, 1, 1, f_width])
+                        zvec_sizes[shared_z_idx] = f_width
+
                 z_split[shared_z_idx] = shared_z
-                zvec_sizes[shared_z_idx] = f_width
                 self.shared_z = shared_z
-                self.shared_z_vdim = f_width
+                self.shared_z_vdim = zvec_sizes[shared_z_idx]
 
                 for i in range(len(z_split)):
                     if i==shared_z_idx: continue
@@ -344,11 +359,21 @@ class BigGAN(object):
                 for zi in dense_z_idx:
                     with tf.variable_scope('z'+str(zi)):
                         factor = 1.5 if zi==first_layer_z_idx else 1.0
-                        f_width = self.round_up((split_sizes[zi]*0.75 + zvec_sizes[zi]*0.5)*factor, 8)
-                        layer_z = fully_connected(z_split[zi], units=f_width, scope='dense1', opt=opt)
-                        layer_z = opt["act"](layer_z)
-                        z_split[zi] = layer_z
-                        zvec_sizes[zi] = f_width
+
+                        if self.g_z_dense_concat:
+                            factor = (factor-1.0)*2.0 + 1.0
+                            f_width = self.round_up((zvec_sizes[zi]*0.33)*factor, 8)
+                            layer_z = fully_connected(z_split[zi], units=f_width, scope='dense1', opt=opt)
+                            layer_z = opt["act"](layer_z)
+                            layer_z = tf.reshape(layer_z, shape=[-1, 1, 1, f_width])
+                            z_split[zi] = tf.concat([z_split[zi], layer_z], axis=-1)
+                            zvec_sizes[zi] += f_width
+                        else:
+                            f_width = self.round_up((split_sizes[zi]*0.75 + zvec_sizes[zi]*0.5)*factor, 8)
+                            layer_z = fully_connected(z_split[zi], units=f_width, scope='dense1', opt=opt)
+                            layer_z = opt["act"](layer_z)
+                            z_split[zi] = layer_z
+                            zvec_sizes[zi] = f_width
 
 
 
