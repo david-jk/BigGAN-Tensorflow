@@ -102,6 +102,7 @@ class BigGAN(object):
         """ Generator """
         self.ch = args.ch
         self.upsampling_method = args.upsampling_method
+        self.downsampling_method = args.downsampling_method
         self.g_conv = args.g_conv
         self.g_grow_factor = args.g_grow_factor
         self.g_regularization_method = args.g_regularization
@@ -524,7 +525,8 @@ class BigGAN(object):
         opt = {"sn": self.sn,
                "is_training": is_training,
                "bn_in_d": self.bn_in_d,
-               "act": self.activation_fn}
+               "act": self.activation_fn,
+               "downsampling_method": self.downsampling_method}
 
         with tf.variable_scope("discriminator", reuse=reuse):
             ch = self.d_channels_for_block(0)

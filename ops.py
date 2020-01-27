@@ -206,13 +206,35 @@ def resblock_up_condition(x_init, z, channels, opt, use_bias=True, scope='resblo
     return x + x_init
 
 
+def downconv(x, channels, opt, use_bias=True, method=None):
+    if method==None:
+        method = opt["downsampling_method"]
+
+    if method == 'strided_conv3':
+        return conv(x, channels, kernel=3, stride=2, pad=1, use_bias=use_bias, opt=opt)
+    elif method == 'resize_conv1':
+        x = conv(x, channels, kernel=1, stride=1, pad=0, use_bias=use_bias, opt=opt)
+        return avg_pooling(x)
+    elif method == 'resize_conv3':
+        x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
+        return avg_pooling(x)
+    elif method == 'pool_only':
+        return avg_pooling(x)
+    elif method == 'max_pool_only':
+        return max_pooling(x)
+
+    else: raise ValueError("Invalid downsampling method specified: "+str(method))
+
 def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
             if (opt["bn_in_d"]): x = batch_norm(x_init, opt=opt)
             else: x = x_init
             x = opt["act"](x)
-            x = conv(x, channels, kernel=3, stride=2, pad=1, use_bias=use_bias, opt=opt)
+            method = opt["downsampling_method"]
+            if method!='strided_conv3':
+                method = 'resize_conv3'
+            x = downconv(x, channels, use_bias=use_bias, opt=opt, method=method)
 
         with tf.variable_scope('res2') :
             if (opt["bn_in_d"]): x = batch_norm(x, opt=opt)
@@ -220,7 +242,7 @@ def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
             x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
-            x_init = conv(x_init, channels, kernel=3, stride=2, pad=1, use_bias=use_bias, opt=opt)
+            x_init = downconv(x_init, channels, use_bias=use_bias, opt=opt, method=method)
 
 
     return x + x_init
@@ -326,6 +348,10 @@ def global_sum_pooling(x) :
 
 def max_pooling(x) :
     x = tf.layers.max_pooling2d(x, pool_size=2, strides=2, padding='SAME')
+    return x
+
+def avg_pooling(x):
+    x = tf.layers.average_pooling2d(x, pool_size=2, strides=2, padding='SAME')
     return x
 
 def up_sample(x, scale_factor=2):
