@@ -228,19 +228,30 @@ def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
 def clown_conv(x, channels, opt, use_bias=True, scope='clown', z=None):
 
     split_ch = channels//8
+    half_split_ch = split_ch//2
+    other_half_split_ch = split_ch - half_split_ch
     rest_split = channels - split_ch*7
     deconv4_ch = split_ch + rest_split
+    conv5_ch = split_ch
+
+    no_deconv2 = opt.get("mixed_conv_no_deconv2", False)
+
+    if no_deconv2:
+        deconv4_ch += half_split_ch
+        conv5_ch += other_half_split_ch
 
     with tf.variable_scope(scope):
 
-        deconv4 = deconv(x, deconv4_ch, kernel=4, stride=1, use_bias=use_bias, scope="deconv4", opt=opt)
-        deconv3 = deconv(x, split_ch * 2, kernel=3, stride=1, use_bias=use_bias, scope="deconv3", opt=opt)
-        deconv2 = deconv(x, split_ch, kernel=2, stride=1, use_bias=use_bias, scope="deconv2", opt=opt)
-        conv3 = conv(x, split_ch, kernel=3, stride=1, pad=1, use_bias=use_bias, scope="conv3", opt=opt)
-        conv5 = conv(x, split_ch, kernel=5, stride=1, pad=2, use_bias=use_bias, scope="conv5", opt=opt)
-        dilconv5 = conv(x, split_ch, kernel=5, stride=1, pad=4, dilation=2, use_bias=use_bias, scope="dilconv5", opt=opt)
+        splits = []
+        splits.append(deconv(x, deconv4_ch, kernel=4, stride=1, use_bias=use_bias, scope="deconv4", opt=opt))
+        splits.append(deconv(x, split_ch * 2, kernel=3, stride=1, use_bias=use_bias, scope="deconv3", opt=opt))
+        if not no_deconv2:
+            splits.append(deconv(x, split_ch, kernel=2, stride=1, use_bias=use_bias, scope="deconv2", opt=opt))
+        splits.append(conv(x, split_ch, kernel=3, stride=1, pad=1, use_bias=use_bias, scope="conv3", opt=opt))
+        splits.append(conv(x, conv5_ch, kernel=5, stride=1, pad=2, use_bias=use_bias, scope="conv5", opt=opt))
+        splits.append(conv(x, split_ch, kernel=5, stride=1, pad=4, dilation=2, use_bias=use_bias, scope="dilconv5", opt=opt))
 
-        concat = tf.concat([deconv4, deconv3, deconv2, conv3, conv5, dilconv5], axis=-1)
+        concat = tf.concat(splits, axis=-1)
         if z!=None:
             concat = condition_batch_norm(concat, z, opt=opt)
         else:

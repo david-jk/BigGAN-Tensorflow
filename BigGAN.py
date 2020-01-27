@@ -58,6 +58,7 @@ class BigGAN(object):
         self.g_final_mixed_conv = args.g_final_mixed_conv
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
         self.g_final_mixed_conv_mix_kernel = args.g_final_mixed_conv_mix_kernel
+        self.g_final_mixed_nodeconv2 = args.g_final_mixed_nodeconv2
 
         if args.g_final_mixed_conv_z_layers=='all':
             self.mixed_conv_z_idx = list(range(self.g_final_mixed_conv_stacks))
@@ -466,12 +467,15 @@ class BigGAN(object):
                         final_bias = tf.reshape(final_bias, shape=[-1, 1, 1, final_channels])
 
                     if self.g_final_mixed_conv and not simple_head:
+                        opt["mixed_conv_no_deconv2"] = self.g_final_mixed_nodeconv2
                         for i in range(0,self.g_final_mixed_conv_stacks):
                             layer_z = None
+                            mixed_ch = self.ch
                             if i in self.mixed_conv_z_idx:
                                 layer_z, z_dim, *_ = next_z_split()
+                                mixed_ch = self.round_up(mixed_ch*1.33, 8)
 
-                            x = clown_conv(x, self.ch, scope="clown"+('' if i==0 else str(i+1)), opt=opt, z=layer_z)
+                            x = clown_conv(x, mixed_ch, scope="clown"+('' if i==0 else str(i+1)), opt=opt, z=layer_z, use_bias=not self.g_final_mixed_nodeconv2)
 
                             if self.g_final_layer_shortcuts and (i+1)>=lsa_i:
                                 s_units = final_slice_units if (i==self.g_final_mixed_conv_stacks-1) else slice_units
@@ -839,6 +843,7 @@ class BigGAN(object):
             start_batch_id = 0
             counter = 0
             print(" [!] Load failed...")
+
 
         start_time = time.time()
 
