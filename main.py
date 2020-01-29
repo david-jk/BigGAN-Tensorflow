@@ -32,6 +32,7 @@ def parse_args():
     parser.add_argument('--shared_z', type=int, default=0, help='number of z values to share across all layers - the remaining values are distributed between all layers')
     parser.add_argument('--c_dim', type=int, default=3, help='number of color channels [1, 3, 4]')
     parser.add_argument('--alpha_mask', type=str2bool, default=True, help='if c_dim is 4, multiplies the color channels with the alpha before feeding the image to the discriminator')
+    parser.add_argument('--g_alpha_helper', type=str2bool, default=True, help='adds color channels to alpha channel to help with early training; best used together with alpha masking')
     parser.add_argument('--first_split_ratio', type=int, default=3, help='ratio of z values assigned to the first layer')
     parser.add_argument('--z_reconstruct', type=str2bool, default=False, help='train the discriminator to reconstruct z')
     parser.add_argument('--sn', type=str2bool, default=True, help='using spectral norm')

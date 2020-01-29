@@ -167,6 +167,7 @@ class BigGAN(object):
         self.custom_dataset = True
         self.c_dim = args.c_dim
         self.alpha_mask = args.alpha_mask
+        self.g_alpha_helper = args.g_alpha_helper
         self.data, self.labels = load_data(dataset_name=self.dataset_name, label_file=self.label_file, weight_file=self.weight_file)
 
         self.dataset_num = len(self.data)
@@ -510,6 +511,14 @@ class BigGAN(object):
             else:
                 x = conv(x, channels=self.c_dim, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='G_logit')
 
+            if self.c_dim==4 and self.g_alpha_helper:
+                rgb, alpha = tf.split(x, num_or_size_splits=[3, 1], axis=-1)
+                rgb_w = tf.sqrt(tf.nn.relu(rgb + 2.5))  # tanh(-2.5) ~= −0.9866
+                rgb_sum = tf.reduce_sum(x, -1, keepdims=True)
+                helper_weight = tf.get_variable("alphahelper_w", shape=[], dtype=gan_dtype,
+                                                     initializer=tf.constant_initializer(5.0), trainable=True)
+                alpha = alpha + rgb_sum*helper_weight
+                x = tf.concat([rgb, alpha], axis=-1)
             x = tanh(x)
 
             return x
