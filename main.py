@@ -77,6 +77,7 @@ def parse_args():
     parser.add_argument('--g_mixed_resblock_ch_div', type=float, default=2.0,help='divisor for the number of channels in the residual mixed conv layers')
     parser.add_argument('--g_final_layer', type=str2bool, default=False, help='adds a z-powered layer in the generator before the RGB output')
     parser.add_argument('--g_final_layer_extra', type=str2bool, default=False, help='adds another convolution before final output, recommended if --g_final_layer_shortcuts is used')
+    parser.add_argument('--g_final_layer_extra_bias', type=str2bool, default=False, help='adds bias to extra layer; recommended false, exists mainly for compatibility reasons')
     parser.add_argument('--g_final_layer_shortcuts', type=str2bool, default=False, help='adds shortcuts between the individual mixed conv layers and the final output')
     parser.add_argument('--g_final_layer_shortcuts_after', type=int, default=0, help='start adding shortcuts after this layer (0=initial max size layer, 1=first mixed conv layer)')
     parser.add_argument('--g_final_mixed_conv', type=str2bool, default=False, help='adds experimental mixed convolutions in the final generator layer')

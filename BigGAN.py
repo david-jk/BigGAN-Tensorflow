@@ -54,6 +54,7 @@ class BigGAN(object):
         self.g_mixed_resblock_ch_div = args.g_mixed_resblock_ch_div
         self.g_final_layer = args.g_final_layer
         self.g_final_layer_extra = args.g_final_layer_extra
+        self.g_final_layer_extra_bias = args.g_final_layer_extra_bias
         self.g_final_layer_shortcuts = args.g_final_layer_shortcuts
         self.g_final_layer_shortcuts_after = args.g_final_layer_shortcuts_after
         self.g_final_mixed_conv = args.g_final_mixed_conv
@@ -500,7 +501,7 @@ class BigGAN(object):
                     x = prelu(x)
 
                     if self.g_final_layer_extra:
-                        x = conv(x, channels=24, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='conv2')
+                        x = conv(x, channels=24, kernel=3, stride=1, pad=1, use_bias=self.g_final_layer_extra_bias, opt=opt, scope='conv2')
                         x = prelu(x, scope='prelu2')
 
                     if self.alternative_head:
