@@ -314,3 +314,16 @@ def run_ops(sess, ops, tensors=[], feed_dict=None, create_summaries=False):
     # todo: merge tensor results if steps>1
 
     return loss_values, tensor_results, summary_results
+
+def create_hist_summaries():
+    summaries = []
+    for var in tf.get_collection_ref(tf.GraphKeys.GLOBAL_VARIABLES):
+        if "/Adam" in var.name or "ExponentialMovingAverage" in var.name:
+            continue
+        if var.name.startswith("beta1_power") or var.name.startswith("beta2_power"):
+            continue
+
+        hist = tf.summary.histogram(var.name+'/hist', tf.reshape(var,[-1]))
+        summaries += [hist]
+
+    return tf.summary.merge(summaries)

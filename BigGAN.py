@@ -27,6 +27,7 @@ class BigGAN(object):
         self.virtual_batches = args.virtual_batches
         self.print_freq = args.print_freq
         self.save_freq = args.save_freq
+        self.histogram_freq = args.histogram_freq
         self.keep_checkpoints = args.keep_checkpoints
         if self.keep_checkpoints==0:
             self.keep_checkpoints=None
@@ -827,6 +828,10 @@ class BigGAN(object):
                 self.sample_fake_images_noema = self.generator(self.test_z, self.zero_cls_z, is_training=False, reuse=True)
 
 
+        if self.histogram_freq!=0:
+            self.histogram_ops = create_hist_summaries()
+
+
     def train(self):
 
         tf.global_variables_initializer().run()
@@ -845,7 +850,6 @@ class BigGAN(object):
             start_batch_id = 0
             counter = 0
             print(" [!] Load failed...")
-
 
         start_time = time.time()
 
@@ -889,6 +893,9 @@ class BigGAN(object):
                         g_losses, _, g_summaries, *__ = run_ops(self.sess, self.g_ops_alt, feed_dict=g_feed_dict, create_summaries=True)
                         add_losses(g_losses)
                         add_summaries(g_summaries)
+
+                if self.histogram_freq!=0 and counter%self.histogram_freq==0:
+                    self.writer.add_summary(self.sess.run(self.histogram_ops), counter)
 
                 for summary in summaries:
                     self.writer.add_summary(summary, counter)

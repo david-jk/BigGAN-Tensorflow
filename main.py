@@ -18,6 +18,7 @@ def parse_args():
 
     parser.add_argument('--print_freq', type=int, default=250, help='how often a set of samples is generated')
     parser.add_argument('--save_freq', type=int, default=1000, help='how often checkpoints are saved')
+    parser.add_argument('--histogram_freq', type=int, default=125, help='how often histogram summaries are saved, 0 to deactivate')
     parser.add_argument('--keep_checkpoints', type=int, default=5, help='keep N last checkpoints, 0 to keep all')
 
     parser.add_argument('--g_lr', type=float, default=0.00005, help='learning rate for generator')
