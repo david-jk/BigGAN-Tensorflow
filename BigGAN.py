@@ -330,7 +330,10 @@ class BigGAN(object):
                 with tf.variable_scope('shared_z'):
                     if self.g_z_dense_concat:
                         f_width = self.round_up(z_dim*0.5, 8)
-                        f_in = tf.concat([shared_z, self.cls_z_embedding], axis=-1)
+                        if self.acgan:
+                            f_in = tf.concat([shared_z, self.cls_z_embedding], axis=-1)
+                        else:
+                            f_in = shared_z
                         dense_shared_z = fully_connected(f_in, units=f_width, scope='dense1', opt=opt)
                         dense_shared_z = opt["act"](dense_shared_z)
                         dense_shared_z = tf.reshape(dense_shared_z, shape=[-1, 1, 1, f_width])
@@ -777,10 +780,12 @@ class BigGAN(object):
         self.d_ops = create_train_ops(self.d_opt, self.d_loss, d_vars, self.virtual_batches)
 
         self.g_ops["losses"]["g_loss"] = self.g_loss
-        self.g_ops["losses"]["g_cls_loss"] = self.g_classification_loss
+        if self.acgan:
+            self.g_ops["losses"]["g_cls_loss"] = self.g_classification_loss
 
         self.d_ops["losses"]["d_loss"] = self.d_loss
-        self.d_ops["losses"]["d_cls_loss"] = self.d_classification_loss
+        if self.acgan:
+            self.d_ops["losses"]["d_cls_loss"] = self.d_classification_loss
         if self.z_reconstruct:
             self.d_ops["losses"]["d_recon"] = self.z_reconstruct_loss
 
@@ -789,10 +794,12 @@ class BigGAN(object):
             self.d_ops_alt = create_train_ops(self.d_opt, self.d_loss_alt, d_vars, self.virtual_batches)
 
             self.g_ops_alt["losses"]["g_loss_alt"] = self.g_loss_alt
-            self.g_ops_alt["losses"]["g_cls_loss_alt"] = self.g_classification_loss_alt
+            if self.acgan:
+                self.g_ops_alt["losses"]["g_cls_loss_alt"] = self.g_classification_loss_alt
 
             self.d_ops_alt["losses"]["d_loss_alt"] = self.d_loss_alt
-            self.d_ops_alt["losses"]["d_cls_loss_alt"] = self.d_classification_loss
+            if self.acgan:
+                self.d_ops_alt["losses"]["d_cls_loss_alt"] = self.d_classification_loss
             if self.z_reconstruct:
                 self.d_ops_alt["losses"]["d_recon_alt"] = self.z_reconstruct_loss_alt
 
