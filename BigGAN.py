@@ -62,10 +62,13 @@ class BigGAN(object):
         self.g_final_mixed_conv_mix_kernel = args.g_final_mixed_conv_mix_kernel
         self.g_final_mixed_nodeconv2 = args.g_final_mixed_nodeconv2
 
-        if args.g_final_mixed_conv_z_layers=='all':
-            self.mixed_conv_z_idx = list(range(self.g_final_mixed_conv_stacks))
+        if self.g_final_mixed_conv:
+            if args.g_final_mixed_conv_z_layers=='all':
+                self.mixed_conv_z_idx = list(range(self.g_final_mixed_conv_stacks))
+            else:
+                self.mixed_conv_z_idx = parse_int_list(args.g_final_mixed_conv_z_layers)
         else:
-            self.mixed_conv_z_idx = parse_int_list(args.g_final_mixed_conv_z_layers)
+            self.mixed_conv_z_idx = []
 
         if self.g_final_layer:
             self.depth += 1
