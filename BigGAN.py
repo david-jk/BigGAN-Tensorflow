@@ -112,6 +112,14 @@ class BigGAN(object):
         self.g_grow_factor = args.g_grow_factor
         self.g_regularization_method = args.g_regularization
         self.g_regularization_factor = args.g_regularization_factor
+        self.sa_size = args.sa_size
+        self.g_sa_size = self.sa_size
+        self.d_sa_size = self.sa_size
+        if args.g_sa_size!=0:
+            self.g_sa_size = args.g_sa_size
+
+        if args.d_sa_size!=0:
+            self.d_sa_size = args.d_sa_size
 
         self.z_dim = args.z_dim  # dimension of noise-vector
         self.shared_z_dim = args.shared_z
@@ -262,9 +270,13 @@ class BigGAN(object):
 
             if   self.img_size==64: block_info={"counts": [1, 1, 1, 1], "sa_index": 3}
             elif self.img_size==128: block_info={"counts": [1, 1, 1, 1, 1], "sa_index": 4}
-            elif self.img_size==256: block_info={"counts": [1, 2, 1, 1, 1], "sa_index": 4}
+            elif self.img_size==256: block_info={"counts": [1, 2, 1, 1, 1], "sa_index": 3}
             elif self.img_size==512: block_info={"counts": [1, 2, 1, 1, 2], "sa_index": 3}
             else: raise ValueError("Invalid image size specified: "+str(self.img_size))
+
+            if self.g_sa_size!=0:
+                self.set_sa_index(block_info, self.g_sa_size)
+
 
             if new_z_dist:
                 z_weights=[]
@@ -553,6 +565,9 @@ class BigGAN(object):
             elif self.img_size==256: block_info={"counts": [1, 1, 1, 2, 1], "sa_index": 2}
             elif self.img_size==512: block_info={"counts": [1, 2, 1, 1, 2], "sa_index": 2}
             else: raise ValueError("Invalid image size specified: "+str(self.img_size))
+
+            if self.d_sa_size!=0:
+                self.set_sa_index(block_info, self.d_sa_size, scaling_down=True)
 
             if self.c_dim==4 and self.alpha_mask:
                 rgb, alpha = tf.split(x, num_or_size_splits=[3,1], axis=-1)
@@ -1227,3 +1242,28 @@ class BigGAN(object):
 
     def rnd_cls_feed_dict(self):
         return {self.cls_z: self.draw_n_tags(self.batch_size)}
+
+    def set_sa_index(self, block_info, sa_size, scaling_down=False):
+        if sa_size<0:
+            block_info["sa_index"] = -1
+            return
+
+        cur_f_size = self.img_size if scaling_down else 4
+        for i, bs in enumerate(block_info["counts"]):
+            for j in range(bs):
+                if scaling_down:
+                    cur_f_size //= 2
+                else:
+                    cur_f_size *= 2
+
+            if scaling_down:
+                met_goal = cur_f_size<=sa_size
+            else:
+                met_goal = cur_f_size>=sa_size
+
+            if met_goal or i==len(block_info["counts"])-1:
+                block_info["sa_index"] = i + 1
+                break
+
+        if cur_f_size!=sa_size:
+            print("Warning: moving self-attention to " + str(cur_f_size) + "x" + str(cur_f_size) + " feature maps")

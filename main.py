@@ -44,6 +44,9 @@ def parse_args():
     parser.add_argument('--g_conv', type=str, default='deconv3', help='[deconv3 / deconv4 / conv3 / conv5]')
     parser.add_argument('--g_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the generator')
     parser.add_argument('--d_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the discriminator')
+    parser.add_argument('--g_sa_size', type=int, default=0, help='insert generator self-attention after feature map size N, 0 for auto, -1 for no self-attention')
+    parser.add_argument('--d_sa_size', type=int, default=0, help='insert discriminator self-attention after feature map size N, 0 for auto, -1 for no self-attention')
+    parser.add_argument('--sa_size', type=int, default=0, help='sets both --g_sa_size and --d_sa_size')
 
     parser.add_argument('--gan_type', type=str, default='ra-dragan', help='[gan / lsgan / wgan-gp / wgan-lp / dragan / hinge / ra-gan / ra-hinge / ra-dragan / ra-lsgan]')
     parser.add_argument('--d_loss_func', type=str, default='', help='loss function override for the discriminator - if not set, loss function is determined by gan_type')
