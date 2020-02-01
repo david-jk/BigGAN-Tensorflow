@@ -2,6 +2,7 @@ import sys
 import time
 import random
 import math
+import copy
 from ops import *
 from utils import *
 from tensorflow.contrib.data import prefetch_to_device, shuffle_and_repeat, map_and_batch
@@ -61,6 +62,16 @@ class BigGAN(object):
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
         self.g_final_mixed_conv_mix_kernel = args.g_final_mixed_conv_mix_kernel
         self.g_final_mixed_nodeconv2 = args.g_final_mixed_nodeconv2
+
+        self.bn_options = {}
+        self.bn_options["type"] = args.bn_type
+        self.bn_options["momentum"] = args.bn_momentum
+        if self.bn_options["type"] == 'batch_renorm':
+            self.bn_options["renorm_clipping"] = {}
+            self.bn_options["renorm_clipping"]["rmax"] = args.bn_renorm_rmax
+            self.bn_options["renorm_clipping"]["dmax"] = args.bn_renorm_dmax
+            self.bn_options["renorm_momentum"] = args.bn_renorm_momentum
+            self.bn_options["shared_renorm"] = args.bn_renorm_shared
 
         if self.g_final_mixed_conv:
             if args.g_final_mixed_conv_z_layers=='all':
@@ -233,7 +244,8 @@ class BigGAN(object):
                "is_training": is_training,
                "upsampling_method": self.upsampling_method,
                "g_conv": self.g_conv,
-               "act": self.activation_fn}
+               "act": self.activation_fn,
+               "bn": copy.deepcopy(self.bn_options)}
 
         if is_training:
             if self.g_regularization_method=='none':
@@ -451,7 +463,7 @@ class BigGAN(object):
                 ch = self.g_channels_for_block(b_i, len(block_info["counts"]))
                 ch_mul=ch_mul//2
 
-            x = batch_norm(x, opt=opt)
+            x = bn(x, opt=opt)
             x = opt["act"](x)
 
             if self.g_final_layer:
@@ -555,7 +567,8 @@ class BigGAN(object):
                "is_training": is_training,
                "bn_in_d": self.bn_in_d,
                "act": self.activation_fn,
-               "downsampling_method": self.downsampling_method}
+               "downsampling_method": self.downsampling_method,
+               "bn": copy.deepcopy(self.bn_options)}
 
         with tf.variable_scope("discriminator", reuse=reuse):
             ch = self.d_channels_for_block(0)
@@ -622,7 +635,7 @@ class BigGAN(object):
                 y = fully_connected(features, units=self.z_dim, opt=opt, scope='z_reconstruct')
 
                 branch = fully_connected(features, units=self.scale_channels(self.z_dim,1.5), opt=opt, scope='z_reconstruct_res1')
-                branch = batch_norm(branch, opt)
+                branch = bn(branch, opt)
                 branch = relu(branch)
                 branch = fully_connected(branch, units=self.z_dim, opt=opt, scope='z_reconstruct_res2')
 

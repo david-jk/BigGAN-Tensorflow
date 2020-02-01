@@ -136,12 +136,12 @@ def resblock(x_init, channels, opt, use_bias=True, scope='resblock'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
             x = conv(x_init, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
-            if (opt["bn_in_d"]): x = batch_norm(x, opt=opt)
+            if (opt["bn_in_d"]): x = bn(x, opt=opt)
             x = opt["act"](x)
 
         with tf.variable_scope('res2'):
             x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
-            if (opt["bn_in_d"]): x = batch_norm(x, opt=opt)
+            if (opt["bn_in_d"]): x = bn(x, opt=opt)
 
         return x + x_init
 
@@ -172,12 +172,12 @@ def g_conv(x, channels, opt, use_bias=True):
 def resblock_up(x_init, channels, opt, use_bias=True, scope='resblock_up'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
-            x = batch_norm(x_init, opt=opt)
+            x = bn(x_init, opt=opt)
             x = opt["act"](x)
             x = upconv(x, channels, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('res2') :
-            x = batch_norm(x, opt=opt)
+            x = bn(x, opt=opt)
             x = opt["act"](x)
             x = g_conv(x, channels, use_bias=use_bias, opt=opt)
 
@@ -190,12 +190,12 @@ def resblock_up(x_init, channels, opt, use_bias=True, scope='resblock_up'):
 def resblock_up_condition(x_init, z, channels, opt, use_bias=True, scope='resblock_up'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
-            x = condition_batch_norm(x_init, z, opt=opt)
+            x = cond_bn(x_init, z, opt=opt)
             x = opt["act"](x)
             x = upconv(x, channels, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('res2') :
-            x = condition_batch_norm(x, z, opt=opt)
+            x = cond_bn(x, z, opt=opt)
             x = opt["act"](x)
             x = g_conv(x, channels, use_bias=use_bias, opt=opt)
 
@@ -228,7 +228,7 @@ def downconv(x, channels, opt, use_bias=True, method=None):
 def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
     with tf.variable_scope(scope):
         with tf.variable_scope('res1'):
-            if (opt["bn_in_d"]): x = batch_norm(x_init, opt=opt)
+            if (opt["bn_in_d"]): x = bn(x_init, opt=opt)
             else: x = x_init
             x = opt["act"](x)
             method = opt["downsampling_method"]
@@ -237,7 +237,7 @@ def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
             x = downconv(x, channels, use_bias=use_bias, opt=opt, method=method)
 
         with tf.variable_scope('res2') :
-            if (opt["bn_in_d"]): x = batch_norm(x, opt=opt)
+            if (opt["bn_in_d"]): x = bn(x, opt=opt)
             x = opt["act"](x)
             x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
 
@@ -275,9 +275,9 @@ def clown_conv(x, channels, opt, use_bias=True, scope='clown', z=None):
 
         concat = tf.concat(splits, axis=-1)
         if z!=None:
-            concat = condition_batch_norm(concat, z, opt=opt)
+            concat = cond_bn(concat, z, opt=opt)
         else:
-            concat = batch_norm(concat, opt=opt)
+            concat = bn(concat, opt=opt)
         concat = prelu(concat)
 
         return concat
@@ -384,17 +384,65 @@ def tanh(x):
 # Normalization function
 ##################################################################################
 
-def batch_norm(x, opt, scope='batch_norm'):
+def bn(x, opt={}, scope='batch_norm'):
+    type = opt.get("bn",{}).get("type","bn")
+
+    if type=='bn' or type=='batch_norm':
+        return batch_norm(x, opt=opt, scope=scope)
+    elif type=='batch_renorm':
+        if scope=='batch_norm':
+            scope = 'batch_renorm'
+        return batch_renorm(x, opt=opt, scope=scope)
+    else:
+        raise ValueError("Unknown BN type: "+str(type))
+
+def cond_bn(x, z, opt={}, scope='batch_norm'):
+    type = opt.get("bn",{}).get("type","bn")
+    if type=='bn' or type=='batch_norm':
+        return condition_batch_norm(x, z, opt=opt, scope=scope)
+    elif type=='batch_renorm':
+        if scope=='batch_norm':
+            scope = 'batch_renorm'
+        return condition_batch_renorm(x, z, opt=opt, scope=scope)
+    else:
+        raise ValueError("Unknown BN type: "+str(type))
+
+def batch_norm(x, opt={}, scope='batch_norm'):
     return tf.layers.batch_normalization(x,
-                                         momentum=0.98,
+                                         momentum=opt.get("bn", {}).get("momentum", 0.98),
                                          epsilon=1e-05,
                                          training=opt["is_training"],
                                          name=scope)
 
-def condition_batch_norm(x, z, opt, scope='batch_norm'):
+def normalize_renorm_clipping_params(renorm_clipping):
+    if "rmax" not in renorm_clipping:
+        renorm_clipping["rmax"] = 1.5
+
+    if "dmax" not in renorm_clipping:
+        renorm_clipping["dmax"] = 0.5
+
+    if "rmax" in renorm_clipping and not "rmin" in renorm_clipping:
+        renorm_clipping["rmin"] = 1.0/renorm_clipping["rmax"]
+
+    return renorm_clipping
+
+
+def batch_renorm(x, opt={}, scope='batch_renorm'):
+    renorm_clipping = normalize_renorm_clipping_params(opt.get("bn", {}).get("renorm_clipping", {}))
+    return tf.layers.batch_normalization(x,
+                                         momentum=opt.get("bn", {}).get("momentum", 0.98),
+                                         epsilon=1e-05,
+                                         training=opt["is_training"],
+                                         name=scope,
+                                         renorm=True,
+                                         renorm_momentum=opt.get("bn", {}).get("renorm_momentum", 0.9),
+                                         renorm_clipping=renorm_clipping)
+
+def condition_batch_norm(x, z, opt={}, scope='batch_norm'):
     with tf.variable_scope(scope) :
         _, _, _, c = x.get_shape().as_list()
-        decay = 0.98
+
+        decay = opt.get("bn", {}).get("momentum", 0.98)
         epsilon = 1e-05
 
         test_mean = tf.get_variable("pop_mean", shape=[c], dtype=gan_dtype, initializer=tf.constant_initializer(0.0), trainable=False)
@@ -413,6 +461,70 @@ def condition_batch_norm(x, z, opt, scope='batch_norm'):
 
             with tf.control_dependencies([ema_mean, ema_var]):
                 return tf.nn.batch_normalization(x, batch_mean, batch_var, beta, gamma, epsilon)
+        else:
+            return tf.nn.batch_normalization(x, test_mean, test_var, beta, gamma, epsilon)
+
+def condition_batch_renorm(x, z, opt={}, scope='batch_renorm'):
+    with tf.variable_scope(scope) :
+        _, _, _, c = x.get_shape().as_list()
+
+        renorm_clipping = normalize_renorm_clipping_params(opt.get("bn", {}).get("renorm_clipping", {}))
+
+        test_decay = opt.get("bn", {}).get("momentum", 0.98)
+        renorm_decay = opt.get("bn", {}).get("renorm_momentum", 0.9)
+        shared = opt.get("bn", {}).get("shared_renorm", False)
+        renorm_fadein_decay = opt.get("bn", {}).get("renorm_fadein_decay", 0.9999)
+
+        if not shared:
+            test_decay = renorm_decay
+
+        epsilon = 1e-05
+
+        test_mean = tf.get_variable("pop_mean", shape=[c], dtype=gan_dtype, initializer=tf.constant_initializer(0.0), trainable=False)
+        test_var = tf.get_variable("pop_var", shape=[c], dtype=gan_dtype, initializer=tf.constant_initializer(1.0), trainable=False)
+
+        if not shared:
+            renorm_mean = tf.get_variable("renorm_mean", shape=[c], dtype=gan_dtype, initializer=tf.constant_initializer(0.0), trainable=False)
+            renorm_var = tf.get_variable("renorm_var", shape=[c], dtype=gan_dtype, initializer=tf.constant_initializer(1.0), trainable=False)
+            renorm_weight = tf.get_variable("renorm_weight", shape=[], dtype=gan_dtype, initializer=tf.constant_initializer(0.0), trainable=False)
+        else:
+            renorm_mean = test_mean
+            renorm_var = test_var
+            renorm_weight = 1.0
+
+        beta = fully_connected(z, units=c, scope='beta', opt=opt)
+        gamma = fully_connected(z, units=c, scope='gamma', opt=opt)
+
+        beta = tf.reshape(beta, shape=[-1, 1, 1, c])
+        gamma = tf.reshape(gamma, shape=[-1, 1, 1, c])
+
+        if opt["is_training"]:
+            batch_mean, batch_var = tf.nn.moments(x, [0, 1, 2])
+
+            rmax = renorm_clipping["rmax"]
+            rmin = renorm_clipping["rmin"]
+            dmax = renorm_clipping["dmax"]
+
+            sigma = tf.sqrt(batch_var + epsilon)
+            renorm_sigma = tf.sqrt(renorm_var + epsilon)
+            weighted_renorm_sigma = renorm_weight*renorm_sigma + (1 - renorm_weight)*sigma
+            weighted_renorm_mean = renorm_weight*renorm_mean + (1 - renorm_weight)*batch_mean
+            r = tf.stop_gradient(tf.clip_by_value(sigma/weighted_renorm_sigma, rmin, rmax))
+            d = tf.stop_gradient(tf.clip_by_value((batch_mean - weighted_renorm_mean)/weighted_renorm_sigma, -dmax, dmax))
+
+            test_mean_op = tf.assign(test_mean, test_mean * test_decay + batch_mean * (1 - test_decay))
+            test_var_op = tf.assign(test_var, test_var * test_decay + batch_var * (1 - test_decay))
+
+            ema_ops = [test_mean_op, test_var_op]
+
+            if not shared:
+                renorm_mean_op = tf.assign(renorm_mean, renorm_mean*renorm_decay + batch_mean*(1 - renorm_decay))
+                renorm_var_op = tf.assign(renorm_var, renorm_var*renorm_decay + batch_var*(1 - renorm_decay))
+                renorm_w_op = tf.assign(renorm_weight, renorm_weight*renorm_fadein_decay + 1.0*(1 - renorm_fadein_decay))
+                ema_ops += [renorm_mean_op, renorm_var_op, renorm_w_op]
+
+            with tf.control_dependencies(ema_ops):
+                return tf.nn.batch_normalization(x, batch_mean, batch_var, beta + d*gamma, r * gamma, epsilon)
         else:
             return tf.nn.batch_normalization(x, test_mean, test_var, beta, gamma, epsilon)
 
