@@ -73,6 +73,10 @@ class BigGAN(object):
             self.bn_options["renorm_momentum"] = args.bn_renorm_momentum
             self.bn_options["shared_renorm"] = args.bn_renorm_shared
 
+        self.conv_options = {}
+        self.conv_options["padding_type"] = args.conv_padding
+        self.conv_options["sn"] = args.sn
+
         if self.g_final_mixed_conv:
             if args.g_final_mixed_conv_z_layers=='all':
                 self.mixed_conv_z_idx = list(range(self.g_final_mixed_conv_stacks))
@@ -245,25 +249,26 @@ class BigGAN(object):
                "upsampling_method": self.upsampling_method,
                "g_conv": self.g_conv,
                "act": self.activation_fn,
-               "bn": copy.deepcopy(self.bn_options)}
+               "bn": copy.deepcopy(self.bn_options),
+               "conv": copy.deepcopy(self.conv_options)}
 
         if is_training:
             if self.g_regularization_method=='none':
-                opt["conv_regularizer"]=None
+                opt["conv"]["regularizer"]=None
                 opt["fc_regularizer"]=None
             elif self.g_regularization_method=='ortho':
-                opt["conv_regularizer"]=orthogonal_regularizer(self.g_regularization_factor,type='ortho')
+                opt["conv"]["regularizer"]=orthogonal_regularizer(self.g_regularization_factor,type='ortho')
                 opt["fc_regularizer"]=orthogonal_regularizer_fc(self.g_regularization_factor,type='ortho')
             elif self.g_regularization_method=='ortho_cosine':
-                opt["conv_regularizer"]=orthogonal_regularizer(self.g_regularization_factor,type='ortho_cosine')
+                opt["conv"]["regularizer"]=orthogonal_regularizer(self.g_regularization_factor,type='ortho_cosine')
                 opt["fc_regularizer"]=orthogonal_regularizer_fc(self.g_regularization_factor,type='ortho_cosine')
             elif self.g_regularization_method=='l2':
-                opt["conv_regularizer"]=tf.contrib.layers.l2_regularizer(self.g_regularization_factor)
+                opt["conv"]["regularizer"]=tf.contrib.layers.l2_regularizer(self.g_regularization_factor)
                 opt["fc_regularizer"]=tf.contrib.layers.l2_regularizer(self.g_regularization_factor)
             else:
                 raise ValueError("Unknown regularization method: "+str(self.g_regularization_method))
         else:
-            opt["conv_regularizer"]=None
+            opt["conv"]["regularizer"]=None
             opt["fc_regularizer"]=None
 
         with tf.variable_scope("generator", reuse=reuse, custom_getter=custom_getter):
@@ -568,7 +573,8 @@ class BigGAN(object):
                "bn_in_d": self.bn_in_d,
                "act": self.activation_fn,
                "downsampling_method": self.downsampling_method,
-               "bn": copy.deepcopy(self.bn_options)}
+               "bn": copy.deepcopy(self.bn_options),
+               "conv": copy.deepcopy(self.conv_options)}
 
         with tf.variable_scope("discriminator", reuse=reuse):
             ch = self.d_channels_for_block(0)

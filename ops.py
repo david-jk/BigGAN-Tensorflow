@@ -19,35 +19,42 @@ gan_dtype = tf.float32
 
 # pad = ceil[ (kernel - stride) / 2 ]
 
-def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, pad_type='reflect', use_bias=True, scope='conv_0'):
+def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, use_bias=True, scope='conv_0'):
     with tf.variable_scope(scope) as full_scope:
+
+        tf_pad_type = 'VALID'
+
         if pad > 0:
+            pad_type = opt.get("conv", {}).get("padding_type", 'reflect')
             h = x.get_shape().as_list()[1]
             if h % stride == 0:
                 pad = pad * 2
             else:
                 pad = max(kernel - (h % stride), 0)
 
-            pad_top = pad // 2
-            pad_bottom = pad - pad_top
-            pad_left = pad // 2
-            pad_right = pad - pad_left
+            pad_top = int(pad//2)
+            pad_bottom = int(pad - pad_top)
+            pad_left = int(pad//2)
+            pad_right = int(pad - pad_left)
 
-            if pad_type == 'zero' :
-                x = tf.pad(x, [[0, 0], [pad_top, pad_bottom], [pad_left, pad_right], [0, 0]])
-            if pad_type == 'reflect' :
+
+            if pad_type == 'zero':
+                tf_pad_type = 'SAME'
+            elif pad_type == 'reflect':
                 x = tf.pad(x, [[0, 0], [pad_top, pad_bottom], [pad_left, pad_right], [0, 0]], mode='REFLECT')
+            else:
+                raise ValueError("Unsupported padding type: "+str(pad_type))
 
-        if opt["sn"]:
+        if opt.get("conv", {}).get("sn", True):
             if 'generator' in full_scope.name:
                 w = tf.get_variable("kernel", shape=[kernel, kernel, x.get_shape()[-1], channels], initializer=weight_init,
-                                    regularizer=opt["conv_regularizer"], dtype=gan_dtype)
+                                    regularizer=opt.get("conv", {}).get("regularizer", None), dtype=gan_dtype)
             else :
                 w = tf.get_variable("kernel", shape=[kernel, kernel, x.get_shape()[-1], channels], initializer=weight_init,
                                     regularizer=None, dtype=gan_dtype)
 
             x = tf.nn.conv2d(input=x, filter=spectral_norm(w),
-                             strides=[1, stride, stride, 1], padding='VALID', dilations=dilation)
+                             strides=[1, stride, stride, 1], padding=tf_pad_type, dilations=dilation)
             if use_bias :
                 bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0), dtype=gan_dtype)
                 x = tf.nn.bias_add(x, bias)
@@ -56,7 +63,7 @@ def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, pad_type='refl
             if 'generator' in full_scope.name:
                 x = tf.layers.conv2d(inputs=x, filters=channels,
                                      kernel_size=kernel, kernel_initializer=weight_init,
-                                     kernel_regularizer=opt["conv_regularizer"],
+                                     kernel_regularizer=opt.get("conv", {}).get("regularizer", None),
                                      strides=stride, use_bias=use_bias, dilations=dilation)
             else :
                 x = tf.layers.conv2d(inputs=x, filters=channels,
@@ -78,8 +85,8 @@ def deconv(x, channels, opt, kernel=4, stride=2, padding='SAME', use_bias=True, 
         else:
             output_shape = [x_shape[0], x_shape[1] * stride + max(kernel - stride, 0), x_shape[2] * stride + max(kernel - stride, 0), channels]
 
-        if opt["sn"]:
-            w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init, regularizer=opt["conv_regularizer"], dtype=gan_dtype)
+        if opt.get("conv", {}).get("sn", True):
+            w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init, regularizer=opt.get("conv", {}).get("regularizer", None), dtype=gan_dtype)
             x = tf.nn.conv2d_transpose(x, filter=spectral_norm(w), output_shape=output_shape, strides=[1, stride, stride, 1], padding=padding)
 
             if use_bias :
@@ -88,7 +95,7 @@ def deconv(x, channels, opt, kernel=4, stride=2, padding='SAME', use_bias=True, 
 
         else :
             x = tf.layers.conv2d_transpose(inputs=x, filters=channels,
-                                           kernel_size=kernel, kernel_initializer=weight_init, kernel_regularizer=opt["conv_regularizer"],
+                                           kernel_size=kernel, kernel_initializer=weight_init, kernel_regularizer=opt.get("conv", {}).get("regularizer", None),
                                            strides=stride, padding=padding, use_bias=use_bias)
 
         return x
@@ -99,7 +106,7 @@ def fully_connected(x, units, opt, use_bias=True, scope='fully_0'):
         shape = x.get_shape().as_list()
         channels = shape[-1]
 
-        if opt["sn"]:
+        if opt.get("conv", {}).get("sn", True):
             if 'generator' in full_scope.name:
                 w = tf.get_variable("kernel", [channels, units], gan_dtype, initializer=weight_init, regularizer=opt["fc_regularizer"])
             else :
