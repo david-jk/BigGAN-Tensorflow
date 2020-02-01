@@ -17,7 +17,12 @@ gan_dtype = tf.float32
 # Layer
 ##################################################################################
 
-# pad = ceil[ (kernel - stride) / 2 ]
+
+def subpixel_conv(x, channels, opt, kernel=3, scale=2, use_bias=True, scope='subpixel_conv_0'):
+    r2 = scale*scale
+    x = conv(x, channels * r2, opt=opt, kernel=kernel, stride=1, use_bias=use_bias, pad=(kernel-1)/2.0, scope=scope)
+    x = tf.nn.depth_to_space(x, block_size=scale)
+    return x
 
 def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, use_bias=True, scope='conv_0'):
     with tf.variable_scope(scope) as full_scope:
@@ -157,6 +162,12 @@ def upconv(x, channels, opt, use_bias=True):
         return deconv(x, channels, kernel=3, stride=2, use_bias=use_bias, opt=opt)
     elif opt["upsampling_method"] == 'deconv4':
         return deconv(x, channels, kernel=4, stride=2, use_bias=use_bias, opt=opt)
+    elif opt["upsampling_method"] == 'deconv6':
+        return deconv(x, channels, kernel=6, stride=2, use_bias=use_bias, opt=opt)
+    elif opt["upsampling_method"] == 'subpixel2':
+        return subpixel_conv(x, channels, kernel=2, scale=2, use_bias=use_bias, opt=opt)
+    elif opt["upsampling_method"] == 'subpixel3':
+        return subpixel_conv(x, channels, kernel=3, scale=2, use_bias=use_bias, opt=opt)
     elif opt["upsampling_method"] == 'resize_conv':
         x = up_sample(x, 2)
         x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
