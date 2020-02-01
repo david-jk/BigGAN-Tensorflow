@@ -249,10 +249,10 @@ def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
             if (opt["bn_in_d"]): x = bn(x_init, opt=opt)
             else: x = x_init
             x = opt["act"](x)
-            method = opt["downsampling_method"]
-            if method!='strided_conv3':
-                method = 'resize_conv3'
-            x = downconv(x, channels, use_bias=use_bias, opt=opt, method=method)
+            res_method = opt["downsampling_method"]
+            if res_method!='strided_conv3':
+                res_method = 'resize_conv3'
+            x = downconv(x, channels, use_bias=use_bias, opt=opt, method=res_method)
 
         with tf.variable_scope('res2') :
             if (opt["bn_in_d"]): x = bn(x, opt=opt)
@@ -260,7 +260,7 @@ def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
             x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
 
         with tf.variable_scope('skip') :
-            x_init = downconv(x_init, channels, use_bias=use_bias, opt=opt, method=method)
+            x_init = downconv(x_init, channels, use_bias=use_bias, opt=opt, method=opt["downsampling_method"])
 
 
     return x + x_init
