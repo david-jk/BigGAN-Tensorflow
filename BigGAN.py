@@ -60,8 +60,10 @@ class BigGAN(object):
         self.g_final_layer_shortcuts_after = args.g_final_layer_shortcuts_after
         self.g_final_mixed_conv = args.g_final_mixed_conv
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
-        self.g_final_mixed_conv_mix_kernel = args.g_final_mixed_conv_mix_kernel
         self.g_final_mixed_nodeconv2 = args.g_final_mixed_nodeconv2
+        self.g_final_kernel = args.g_final_kernel
+        self.g_rgb_mix_kernel = args.g_rgb_mix_kernel
+
 
         self.bn_options = {}
         self.bn_options["type"] = args.bn_type
@@ -518,12 +520,12 @@ class BigGAN(object):
 
                             if self.g_final_layer_shortcuts and (i+1)>=lsa_i:
                                 s_units = final_slice_units if (i==self.g_final_mixed_conv_stacks-1) else slice_units
-                                slices.append(conv(x, channels=s_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='slice'+str(i+2)))
+                                slices.append(conv(x, channels=s_units, kernel=self.g_final_kernel, stride=1, pad=1, use_bias=False, opt=opt, scope='slice'+str(i+2)))
 
                     if self.g_final_layer_shortcuts and not simple_head:
                         x = tf.concat(slices, axis=-1)
                     else:
-                        x = conv(x, channels=final_channels, kernel=3, stride=1, pad=1, use_bias=False, opt=opt)
+                        x = conv(x, channels=final_channels, kernel=self.g_final_kernel, stride=1, pad=1, use_bias=False, opt=opt)
 
 
                     if use_bias:
@@ -533,19 +535,19 @@ class BigGAN(object):
                     x = prelu(x)
 
                     if self.g_final_layer_extra:
-                        x = conv(x, channels=24, kernel=3, stride=1, pad=1, use_bias=self.g_final_layer_extra_bias, opt=opt, scope='conv2')
+                        x = conv(x, channels=24, kernel=self.g_final_kernel, stride=1, pad=1, use_bias=self.g_final_layer_extra_bias, opt=opt, scope='conv2')
                         x = prelu(x, scope='prelu2')
 
                     if self.alternative_head:
-                        x = conv(x, channels=self.c_dim, kernel=self.g_final_mixed_conv_mix_kernel, stride=1,
-                                 pad=(self.g_final_mixed_conv_mix_kernel-1)//2, use_bias=False, opt=opt,
+                        x = conv(x, channels=self.c_dim, kernel=self.g_rgb_mix_kernel, stride=1,
+                                 pad=(self.g_rgb_mix_kernel-1)//2, use_bias=False, opt=opt,
                                  scope='G_logit')
 
                 if not self.alternative_head:
-                    x = conv(x, channels=self.c_dim, kernel=self.g_final_mixed_conv_mix_kernel, stride=1, pad=(self.g_final_mixed_conv_mix_kernel-1)//2, use_bias=False, opt=opt, scope='G_logit')
+                    x = conv(x, channels=self.c_dim, kernel=self.g_rgb_mix_kernel, stride=1, pad=(self.g_rgb_mix_kernel-1)//2, use_bias=False, opt=opt, scope='G_logit')
 
             else:
-                x = conv(x, channels=self.c_dim, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope='G_logit')
+                x = conv(x, channels=self.c_dim, kernel=self.g_rgb_mix_kernel, stride=1, pad=1, use_bias=False, opt=opt, scope='G_logit')
 
             if self.c_dim==4 and self.g_alpha_helper:
                 rgb, alpha = tf.split(x, num_or_size_splits=[3, 1], axis=-1)
