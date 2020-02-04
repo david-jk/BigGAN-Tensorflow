@@ -405,6 +405,11 @@ def tanh(x):
 def bn(x, opt={}, scope='batch_norm'):
     type = opt.get("bn",{}).get("type","bn")
 
+    if type=='batch_norm_broken_renorm':
+        type = 'batch_norm'
+        if scope=='batch_norm':
+            scope = 'batch_renorm'
+
     if type=='bn' or type=='batch_norm':
         return batch_norm(x, opt=opt, scope=scope)
     elif type=='batch_renorm':
@@ -416,6 +421,12 @@ def bn(x, opt={}, scope='batch_norm'):
 
 def cond_bn(x, z, opt={}, scope='batch_norm'):
     type = opt.get("bn",{}).get("type","bn")
+
+    if type=='batch_norm_broken_renorm':
+        type = 'batch_norm'
+        if scope=='batch_norm':
+            scope = 'batch_renorm'
+
     if type=='bn' or type=='batch_norm':
         return condition_batch_norm(x, z, opt=opt, scope=scope)
     elif type=='batch_renorm':
