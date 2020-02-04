@@ -460,6 +460,8 @@ def condition_batch_norm(x, z, opt={}, scope='batch_norm'):
     with tf.variable_scope(scope) :
         _, _, _, c = x.get_shape().as_list()
 
+        fake = False
+
         decay = opt.get("bn", {}).get("momentum", 0.98)
         epsilon = 1e-05
 
@@ -478,13 +480,21 @@ def condition_batch_norm(x, z, opt={}, scope='batch_norm'):
             ema_var = tf.assign(test_var, test_var * decay + batch_var * (1 - decay))
 
             with tf.control_dependencies([ema_mean, ema_var]):
+                if fake:
+                    batch_mean = 0.0
+                    batch_var = 1.0
                 return tf.nn.batch_normalization(x, batch_mean, batch_var, beta, gamma, epsilon)
         else:
+            if fake:
+                test_mean = 0.0
+                test_var = 1.0
             return tf.nn.batch_normalization(x, test_mean, test_var, beta, gamma, epsilon)
 
 def condition_batch_renorm(x, z, opt={}, scope='batch_renorm'):
     with tf.variable_scope(scope) :
         _, _, _, c = x.get_shape().as_list()
+
+        fake=False
 
         renorm_clipping = normalize_renorm_clipping_params(opt.get("bn", {}).get("renorm_clipping", {}))
 
@@ -542,8 +552,14 @@ def condition_batch_renorm(x, z, opt={}, scope='batch_renorm'):
                 ema_ops += [renorm_mean_op, renorm_var_op, renorm_w_op]
 
             with tf.control_dependencies(ema_ops):
-                return tf.nn.batch_normalization(x, batch_mean, batch_var, beta + d*gamma, r * gamma, epsilon)
+                if fake:
+                    return tf.nn.batch_normalization(x, 0.0, 1.0, beta, gamma, epsilon)
+                else:
+                    return tf.nn.batch_normalization(x, batch_mean, batch_var, beta + d*gamma, r*gamma, epsilon)
         else:
+            if fake:
+                test_mean = 0.0
+                test_var = 1.0
             return tf.nn.batch_normalization(x, test_mean, test_var, beta, gamma, epsilon)
 
 
