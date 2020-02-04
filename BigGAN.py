@@ -706,7 +706,7 @@ class BigGAN(object):
         inputs = inputs.\
             apply(shuffle_and_repeat(self.dataset_num)).\
             apply(map_and_batch(Image_Data_Class.image_processing_with_labels if self.acgan else Image_Data_Class.image_processing, self.batch_size, num_parallel_batches=16, drop_remainder=True)).\
-            apply(prefetch_to_device(gpu_device, self.batch_size))
+            apply(prefetch_to_device(gpu_device, 4))
 
         inputs_iterator = inputs.make_one_shot_iterator()
 
