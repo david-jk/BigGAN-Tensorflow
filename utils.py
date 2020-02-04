@@ -327,3 +327,6 @@ def create_hist_summaries():
         summaries += [hist]
 
     return tf.summary.merge(summaries)
+
+def round_up(val, multiple):
+    return (int(val) + multiple - 1) // multiple * multiple

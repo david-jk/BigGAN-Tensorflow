@@ -13,6 +13,8 @@ import tensorflow as tf
 weight_init = tf.truncated_normal_initializer(mean=0.0, stddev=0.02)
 gan_dtype = tf.float32
 
+from utils import round_up
+
 ##################################################################################
 # Layer
 ##################################################################################
@@ -172,6 +174,8 @@ def upconv(x, channels, opt, use_bias=True):
         x = up_sample(x, 2)
         x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
         return x
+    elif opt["upsampling_method"]=='nn':
+        return up_sample(x, 2)
 
     else: raise ValueError("Invalid upsampling method specified: "+str(opt["upsampling_method"]))
 
@@ -261,6 +265,94 @@ def resblock_down(x_init, channels, opt, use_bias=True, scope='resblock_down'):
 
         with tf.variable_scope('skip') :
             x_init = downconv(x_init, channels, use_bias=use_bias, opt=opt, method=opt["downsampling_method"])
+
+
+    return x + x_init
+
+
+
+def resblock_up_cond_deep(x_init, z, channels_out, opt, upscale=True, use_bias=True, scope='deep_resblock'):
+
+    channels_in = int(x_init.get_shape()[-1])
+    inner_channels = round_up((channels_in + channels_out)//6, 8)
+
+    with tf.variable_scope(scope):
+        with tf.variable_scope('bottleneck'):
+            x = cond_bn(x_init, z, opt=opt)
+            x = opt["act"](x)
+            x = conv(x, inner_channels, kernel=1, stride=1, use_bias=False, opt=opt)
+
+        with tf.variable_scope('upscale'):
+            x = cond_bn(x, z, opt=opt)
+            x = opt["act"](x)
+            if upscale:
+                x = upconv(x, inner_channels, use_bias=False, opt=opt)
+
+        with tf.variable_scope('inner1'):
+            x = g_conv(x, inner_channels, use_bias=False, opt=opt)
+            x = cond_bn(x, z, opt=opt)
+            x = opt["act"](x)
+
+        with tf.variable_scope('inner2'):
+            x = g_conv(x, inner_channels, use_bias=False, opt=opt)
+            x = bn(x, opt=opt)
+            x = opt["act"](x)
+
+        with tf.variable_scope('proj'):
+            x = conv(x, channels_out, kernel=1, stride=1, use_bias=use_bias, opt=opt)
+
+        with tf.variable_scope('skip'):
+            if channels_in != channels_out:
+                print(inner_channels, channels_in, channels_out, channels_in - channels_out)
+                kept, dropped = tf.split(x_init, num_or_size_splits=[channels_out, channels_in - channels_out], axis=-1)
+            else:
+                kept = x_init
+
+            if upscale:
+                x_init = upconv(kept, channels_out, use_bias=use_bias, opt=opt)
+
+
+    return x + x_init
+
+
+def resblock_down_deep(x_init, channels_out, opt, downscale=True, use_bias=True, scope='deep_resblock'):
+
+    channels_in = x_init.get_shape()[-1]
+    inner_channels = round_up((channels_in + channels_out)//6, 8)
+
+    with tf.variable_scope(scope):
+        with tf.variable_scope('bottleneck'):
+            x = x_init
+            if (opt["bn_in_d"]): x = bn(x, opt=opt)
+            x = opt["act"](x)
+            x = conv(x, inner_channels, kernel=1, stride=1, pad=0, use_bias=use_bias, opt=opt)
+
+        with tf.variable_scope('inner1'):
+            if (opt["bn_in_d"]): x = bn(x, opt=opt)
+            x = opt["act"](x)
+            x = conv(x, inner_channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
+
+        with tf.variable_scope('inner2'):
+            if (opt["bn_in_d"]): x = bn(x, opt=opt)
+            x = opt["act"](x)
+            x = conv(x, inner_channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
+
+        with tf.variable_scope('downscale'):
+            x = opt["act"](x)
+
+            if downscale:
+                x = downconv(x, inner_channels, use_bias=use_bias, opt=opt, method='pool_only')
+
+        with tf.variable_scope('proj'):
+            x = conv(x, channels_out, kernel=1, stride=1, pad=0, use_bias=use_bias, opt=opt)
+
+        with tf.variable_scope('skip'):
+            if downscale:
+                x_init = downconv(x_init, channels_in, use_bias=use_bias, opt=opt, method='pool_only')
+            if channels_in != channels_out:
+                conv_ch = channels_out - channels_in
+                dense = conv(x_init, conv_ch, kernel=1, stride=1, pad=0, use_bias=use_bias, opt=opt)
+                x_init = tf.concat([x_init, dense], axis=-1)
 
 
     return x + x_init

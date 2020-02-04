@@ -36,6 +36,7 @@ class BigGAN(object):
         self.img_size = args.img_size
         self.random_flip = args.random_flip
         self.depth = args.img_size.bit_length()-2
+        self.deep = args.deep
         self.save_morphs = args.save_morphs
         self.n_labels = args.n_labels
         self.acgan = self.n_labels>0
@@ -469,7 +470,11 @@ class BigGAN(object):
                             x = opt["act"](x)
                             x = g_conv(x, ch, use_bias=False, opt=opt)
                     else:
-                        x=resblock_up_condition(x, block_z, channels=ch, use_bias=False, opt=opt, scope=scope)
+                        if self.deep:
+                            x=resblock_up_cond_deep(x, block_z, channels_out=ch, use_bias=False, opt=opt, scope=scope)
+                            x=resblock_up_cond_deep(x, block_z, channels_out=ch, upscale=False, use_bias=False, opt=opt, scope=scope+"_2")
+                        else:
+                            x=resblock_up_condition(x, block_z, channels=ch, use_bias=False, opt=opt, scope=scope)
 
                 b_i+=1
                 if b_i==block_info["sa_index"]:
@@ -613,7 +618,12 @@ class BigGAN(object):
                 scope='resblock_down_'+str(ch_mul)
                 for sb_i in range(block_count):
                     if block_count>1: scope=scope+'_'+str(sb_i)
-                    x=resblock_down(x, channels=ch, use_bias=False, opt=opt, scope=scope)
+
+                    if self.deep:
+                        x=resblock_down_deep(x, channels_out=ch, use_bias=False, opt=opt, scope=scope)
+                        x=resblock_down_deep(x, channels_out=ch, downscale=False, use_bias=False, opt=opt, scope=scope+"_2")
+                    else:
+                        x=resblock_down(x, channels=ch, use_bias=False, opt=opt, scope=scope)
 
                 b_i+=1
                 if b_i==block_info["sa_index"]:

@@ -15,6 +15,7 @@ def parse_args():
     parser.add_argument('--virtual_batches', type=int, default=1, help='number of gradient accumulations per step')
     parser.add_argument('--ch', type=int, default=64, help='base channel number per layer')
     parser.add_argument('--d_ch', type=int, default=0, help='base channel number per layer in discriminator')
+    parser.add_argument('--deep', type=str2bool, default=False, help='uses BigGAN-deep blocks')
 
     parser.add_argument('--print_freq', type=int, default=250, help='how often a set of samples is generated')
     parser.add_argument('--save_freq', type=int, default=1000, help='how often checkpoints are saved')
