@@ -401,9 +401,12 @@ def mixed_resblock(x, inner_channels, out_channels, opt, use_bias=False, z=None,
 
 def self_attention(x, channels, opt, scope='self_attention'):
     with tf.variable_scope(scope):
-        f = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='f_conv')  # [bs, h, w, c']
-        g = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='g_conv')  # [bs, h, w, c']
-        h = conv(x, channels, kernel=1, stride=1, opt=opt, scope='h_conv')  # [bs, h, w, c]
+
+        use_bias = opt.get("self_attention_bias", False)
+
+        f = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='f_conv', use_bias=use_bias)  # [bs, h, w, c']
+        g = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='g_conv', use_bias=use_bias)  # [bs, h, w, c']
+        h = conv(x, channels, kernel=1, stride=1, opt=opt, scope='h_conv', use_bias=use_bias)  # [bs, h, w, c]
 
         # N = h * w
         s = tf.matmul(hw_flatten(g), hw_flatten(f), transpose_b=True)  # # [bs, N, N]
@@ -420,12 +423,15 @@ def self_attention(x, channels, opt, scope='self_attention'):
 
 def self_attention_2(x, channels, opt, scope='self_attention'):
     with tf.variable_scope(scope):
-        f = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='f_conv')  # [bs, h, w, c']
+
+        use_bias = opt.get("self_attention_bias", False)
+
+        f = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='f_conv', use_bias=use_bias)  # [bs, h, w, c']
         f = max_pooling(f)
 
-        g = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='g_conv')  # [bs, h, w, c']
+        g = conv(x, channels // 8, kernel=1, stride=1, opt=opt, scope='g_conv', use_bias=use_bias)  # [bs, h, w, c']
 
-        h = conv(x, channels // 2, kernel=1, stride=1, opt=opt, scope='h_conv')  # [bs, h, w, c]
+        h = conv(x, channels // 2, kernel=1, stride=1, opt=opt, scope='h_conv', use_bias=use_bias)  # [bs, h, w, c]
         h = max_pooling(h)
 
         # N = h * w
@@ -437,7 +443,7 @@ def self_attention_2(x, channels, opt, scope='self_attention'):
         gamma = tf.get_variable("gamma", [1], initializer=tf.constant_initializer(0.0), dtype=gan_dtype)
 
         o = tf.reshape(o, shape=[x.shape[0], x.shape[1], x.shape[2], channels // 2])  # [bs, h, w, C]
-        o = conv(o, channels, kernel=1, stride=1, opt=opt, scope='attn_conv')
+        o = conv(o, channels, kernel=1, stride=1, opt=opt, scope='attn_conv', use_bias=use_bias)
         x = gamma * o + x
 
     return x

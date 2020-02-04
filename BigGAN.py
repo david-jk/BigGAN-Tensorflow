@@ -172,6 +172,7 @@ class BigGAN(object):
         self.ld = args.ld
         self.bn_in_d = args.bn_in_d
         self.d_use_bias = args.bias_in_d
+        self.bias_in_sa = args.bias_in_sa
         self.d_ch = args.d_ch
         if self.d_ch <= 0: self.d_ch = self.ch
         self.d_grow_factor = args.d_grow_factor
@@ -255,6 +256,7 @@ class BigGAN(object):
                "upsampling_method": self.upsampling_method,
                "g_conv": self.g_conv,
                "act": self.activation_fn,
+               "self_attention_bias": self.bias_in_sa,
                "bn": copy.deepcopy(self.bn_options),
                "conv": copy.deepcopy(self.conv_options)}
 
@@ -592,6 +594,7 @@ class BigGAN(object):
                "bn_in_d": self.bn_in_d,
                "act": self.activation_fn,
                "downsampling_method": self.downsampling_method,
+               "self_attention_bias": self.bias_in_sa,
                "bn": copy.deepcopy(self.bn_options),
                "conv": copy.deepcopy(self.conv_options)}
 
