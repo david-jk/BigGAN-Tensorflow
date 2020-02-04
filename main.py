@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument('--z_reconstruct', type=str2bool, default=False, help='train the discriminator to reconstruct z')
     parser.add_argument('--sn', type=str2bool, default=True, help='using spectral norm')
     parser.add_argument('--bn_in_d', type=str2bool, default=False, help='whether to use BN in the discriminator')
+    parser.add_argument('--bias_in_d', type=str2bool, default=False, help='whether to use bias in the discriminator')
     parser.add_argument('--bn_type', type=str, default='batch_norm', help='[batch_norm / batch_renorm]')
     parser.add_argument('--bn_momentum', type=float, default=0.98, help='momentum for running averages kept by batch norm for test time')
     parser.add_argument('--bn_renorm_rmax', type=float, default=1.5, help='maximum correction scaling done by batch renorm')

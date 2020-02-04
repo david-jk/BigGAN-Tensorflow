@@ -171,6 +171,7 @@ class BigGAN(object):
         self.sn = args.sn
         self.ld = args.ld
         self.bn_in_d = args.bn_in_d
+        self.d_use_bias = args.bias_in_d
         self.d_ch = args.d_ch
         if self.d_ch <= 0: self.d_ch = self.ch
         self.d_grow_factor = args.d_grow_factor
@@ -471,8 +472,8 @@ class BigGAN(object):
                             x = g_conv(x, ch, use_bias=False, opt=opt)
                     else:
                         if self.deep:
-                            x=resblock_up_cond_deep(x, block_z, channels_out=ch, use_bias=False, opt=opt, scope=scope)
-                            x=resblock_up_cond_deep(x, block_z, channels_out=ch, upscale=False, use_bias=False, opt=opt, scope=scope+"_2")
+                            x=resblock_up_cond_deep(x, block_z, channels_out=ch, use_bias=True, opt=opt, scope=scope)
+                            x=resblock_up_cond_deep(x, block_z, channels_out=ch, upscale=False, use_bias=True, opt=opt, scope=scope+"_2")
                         else:
                             x=resblock_up_condition(x, block_z, channels=ch, use_bias=False, opt=opt, scope=scope)
 
@@ -620,10 +621,10 @@ class BigGAN(object):
                     if block_count>1: scope=scope+'_'+str(sb_i)
 
                     if self.deep:
-                        x=resblock_down_deep(x, channels_out=ch, use_bias=False, opt=opt, scope=scope)
-                        x=resblock_down_deep(x, channels_out=ch, downscale=False, use_bias=False, opt=opt, scope=scope+"_2")
+                        x=resblock_down_deep(x, channels_out=ch, use_bias=self.d_use_bias, opt=opt, scope=scope)
+                        x=resblock_down_deep(x, channels_out=ch, downscale=False, use_bias=self.d_use_bias, opt=opt, scope=scope + "_2")
                     else:
-                        x=resblock_down(x, channels=ch, use_bias=False, opt=opt, scope=scope)
+                        x=resblock_down(x, channels=ch, use_bias=self.d_use_bias, opt=opt, scope=scope)
 
                 b_i+=1
                 if b_i==block_info["sa_index"]:
@@ -634,7 +635,7 @@ class BigGAN(object):
 
             ch=self.d_channels_for_block(b_i-1)  # last layer has same width as previous one
 
-            x = resblock(x, channels=ch, use_bias=False, opt=opt, scope='resblock')
+            x = resblock(x, channels=ch, use_bias=self.d_use_bias, opt=opt, scope='resblock')
             x = opt["act"](x)
 
             features = global_sum_pooling(x)
