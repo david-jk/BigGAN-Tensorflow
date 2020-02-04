@@ -49,6 +49,7 @@ class BigGAN(object):
         self.weight_file = args.weight_file
         self.g_first_level_dense_layer = args.g_first_level_dense_layer
         self.g_other_level_dense_layer = args.g_other_level_dense_layer
+        self.g_no_last_resblock = args.g_no_last_resblock
         self.g_z_dense_concat = args.g_z_dense_concat
         self.d_cls_dense_layers = args.d_cls_dense_layers
         self.g_mixed_resblocks = args.g_mixed_resblocks
@@ -458,7 +459,16 @@ class BigGAN(object):
                     else:
                         block_z = layer_z
 
-                    x=resblock_up_condition(x, block_z, channels=ch, use_bias=False, opt=opt, scope=scope)
+                    is_last_block = sb_i == block_count-1 and b_i == len(block_info["counts"])-1
+
+                    if self.g_no_last_resblock and is_last_block:
+                        with tf.variable_scope(scope):
+                            x = upconv(x, ch, use_bias=False, opt=opt)
+                            x = cond_bn(x, block_z, opt=opt)
+                            x = opt["act"](x)
+                            x = g_conv(x, ch, use_bias=False, opt=opt)
+                    else:
+                        x=resblock_up_condition(x, block_z, channels=ch, use_bias=False, opt=opt, scope=scope)
 
                 b_i+=1
                 if b_i==block_info["sa_index"]:

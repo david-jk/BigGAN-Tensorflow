@@ -81,6 +81,7 @@ def parse_args():
     parser.add_argument('--weight_file', type=str, default='', help='weight file containing sample selection probabilities')
     parser.add_argument('--g_first_level_dense_layer', type=str2bool, default=True, help='adds an extra dense layer between the z inputs and the 4x4 layer')
     parser.add_argument('--g_other_level_dense_layer', type=str2bool, default=False, help='adds an extra dense layer between the z inputs and the intermediate layers')
+    parser.add_argument('--g_no_last_resblock', type=str2bool, default=False, help='does not add a resblock to the last block of the generator')
     parser.add_argument('--g_z_dense_concat', type=str2bool, default=False, help='concatenates results of dense layers to z vectors instead of replacing them')
     parser.add_argument('--d_cls_dense_layers', type=str2bool, default=False, help='adds two extra layers before the classification output of the discriminator')
     parser.add_argument('--g_mixed_resblocks', type=str2bool, default=False, help='adds a residual mixed conv layer after each block')
