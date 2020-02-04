@@ -84,6 +84,7 @@ def parse_args():
     parser.add_argument('--g_no_last_resblock', type=str2bool, default=False, help='does not add a resblock to the last block of the generator')
     parser.add_argument('--g_z_dense_concat', type=str2bool, default=False, help='concatenates results of dense layers to z vectors instead of replacing them')
     parser.add_argument('--d_cls_dense_layers', type=str2bool, default=False, help='adds two extra layers before the classification output of the discriminator')
+    parser.add_argument('--d_compat_use_sn_in_classification', type=str2bool, default=False, help='uses SN in classification dense layers')
     parser.add_argument('--g_mixed_resblocks', type=str2bool, default=False, help='adds a residual mixed conv layer after each block')
     parser.add_argument('--g_mixed_resblock_ch_div', type=float, default=2.0,help='divisor for the number of channels in the residual mixed conv layers')
     parser.add_argument('--g_final_layer', type=str2bool, default=False, help='adds a z-powered layer in the generator before the RGB output')
