@@ -198,6 +198,9 @@ class BigGAN(object):
         self.beta2 = args.beta2
         self.moving_decay = args.moving_decay
 
+        self.save_cls_samples_to = args.save_cls_samples_to
+        self.load_cls_samples_from = args.load_cls_samples_from
+
         self.custom_dataset = True
         self.c_dim = args.c_dim
         self.alpha_mask = args.alpha_mask
@@ -906,6 +909,14 @@ class BigGAN(object):
             if self.acgan:
                 np.random.seed(self.static_sample_seed)
                 self.sample_cls_z = self.draw_n_tags(rounded_n)
+
+                if self.load_cls_samples_from:
+                    _, self.sample_cls_z = read_vectors(self.load_cls_samples_from)
+
+                if self.save_cls_samples_to:
+                    with open(self.save_cls_samples_to, 'w') as file:
+                        for sample in self.sample_cls_z:
+                            file.write('\t'.join(map(str,sample)) + '\n')
 
         else:
             self.sample_fake_images = self.fake_images
