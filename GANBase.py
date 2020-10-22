@@ -49,3 +49,7 @@ class GANBase(object):
         self.conv_options = {}
         self.conv_options["padding_type"] = args.conv_padding
         self.conv_options["sn"] = args.sn
+
+        self.da_policy = args.da_policy
+        if self.da_policy=='full':
+            self.da_policy = 'color,translation,cutout'

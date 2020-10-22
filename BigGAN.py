@@ -5,6 +5,7 @@ import math
 import copy
 from ops import *
 from utils import *
+from DiffAugment_tf import DiffAugment
 from GANBase import GANBase
 from tensorflow.contrib.data import prefetch_to_device, shuffle_and_repeat, map_and_batch
 from tensorflow.contrib.opt import MovingAverageOptimizer
@@ -141,6 +142,10 @@ class BigGAN(GANBase):
         self.d_ch = args.d_ch
         if self.d_ch <= 0: self.d_ch = self.ch
         self.d_grow_factor = args.d_grow_factor
+        self.d_reconstruction_halfres = args.d_reconstruction_halfres
+        self.d_recon_ch = args.d_recon_ch
+        self.d_recon_ld = args.d_recon_ld
+        self.d_recon_bn_after_act = args.d_recon_bn_after_act
 
         self.sample_num = args.sample_num  # number of generated images to be saved
         self.static_sample_z = args.static_sample_z
@@ -566,6 +571,8 @@ class BigGAN(GANBase):
                "bn": copy.deepcopy(self.bn_options),
                "conv": copy.deepcopy(self.conv_options)}
 
+        outputs = {}
+
         with tf.variable_scope("discriminator", reuse=reuse):
             ch = self.d_channels_for_block(0)
 
@@ -604,6 +611,12 @@ class BigGAN(GANBase):
                 ch=self.d_channels_for_block(b_i)
                 ch_mul=ch_mul*2
 
+                if self.d_reconstruction_halfres:
+                    if x.get_shape()[1]==8:
+                        # upscale to half of image size
+                        half_upscaled = self.simple_upscaler(x, base_width=self.d_recon_ch, layers=self.depth - 4, opt=opt)
+                        outputs["coarse_upscaled"] = half_upscaled
+
             ch=self.d_channels_for_block(b_i-1)  # last layer has same width as previous one
 
             x = resblock(x, channels=ch, use_bias=self.d_use_bias, opt=opt, scope='resblock')
@@ -614,7 +627,7 @@ class BigGAN(GANBase):
 
             x = fully_connected(features, units=1, opt=opt, scope='D_logit')
 
-            outputs = {"real": x}
+            outputs["real"] = x
 
             if self.acgan or self.z_reconstruct:
                 no_sn_opt = copy.copy(opt)
@@ -662,7 +675,7 @@ class BigGAN(GANBase):
         alpha = tf.random_uniform(shape=[self.batch_size, 1, 1, 1], minval=0., maxval=1., dtype=gan_dtype)
         interpolated = real + alpha * (fake - real)
 
-        logit = self.discriminator(interpolated, reuse=True)["real"]
+        logit = self.discriminator(DiffAugment(interpolated, policy=self.da_policy), reuse=True)["real"]
 
         grad = tf.gradients(logit, interpolated)[0]  # gradient of D(interpolated)
         grad_norm = tf.norm(flatten(grad), axis=1)  # l2 norm
@@ -677,6 +690,26 @@ class BigGAN(GANBase):
             GP = self.ld * tf.reduce_mean(tf.square(grad_norm - 1.))
 
         return GP
+
+    def simple_upscale(self, x, ch, scope, opt):
+        with tf.variable_scope(scope) as full_scope:
+            x = up_sample(x)
+            x = conv(x, channels=ch*2, kernel=3, pad=1, stride=1, opt=opt)
+            if not self.d_recon_bn_after_act:
+                x = bn(x, opt=opt)
+            x = glu(x)
+            if self.d_recon_bn_after_act:
+                x = bn(x, opt=opt)
+            return x
+
+    def simple_upscaler(self, x, layers=3, scope="upscaler", base_width=64, opt={}):
+        with tf.variable_scope(scope) as full_scope:
+            for li in range(layers):
+                x = self.simple_upscale(x, base_width * 2**(layers-li-1), "upscale" + str(li), opt=opt)
+
+            x = conv(x, channels=self.c_dim, kernel=3, pad=1, stride=1, opt=opt)
+            x = tanh(x)
+            return x
 
     ##################################################################################
     # Model
@@ -720,8 +753,16 @@ class BigGAN(GANBase):
         """ Loss Function """
         # output of D for real images
 
-        d_outputs_real = self.discriminator(self.inputs)
+        augmented_inputs = DiffAugment(self.inputs, policy=self.da_policy)
+        d_outputs_real = self.discriminator(augmented_inputs)
         real_logits = d_outputs_real["real"]
+
+        if self.d_reconstruction_halfres:
+            reconstructed_half_img = d_outputs_real["coarse_upscaled"]
+            half_inputs = avg_pooling(augmented_inputs)
+            recon_shape = reconstructed_half_img.get_shape()
+            recon_pixels = int(recon_shape[0]*recon_shape[1]*recon_shape[2]*recon_shape[3])
+            recon_loss = tf.norm(reconstructed_half_img - half_inputs, ord='euclidean') * (1.0/recon_pixels) * 1000.0 * self.d_recon_ld
 
         if self.acgan:
             real_cls_logits = d_outputs_real["cls"]
@@ -748,7 +789,7 @@ class BigGAN(GANBase):
 
         # output of D for fake images
         def get_d_loss(fake_images):
-            d_outputs_fake = self.discriminator(fake_images, reuse=True)
+            d_outputs_fake = self.discriminator(DiffAugment(fake_images, policy=self.da_policy), reuse=True)
             fake_logits = d_outputs_fake["real"]
 
             fake_cls_logits = 0
@@ -775,6 +816,9 @@ class BigGAN(GANBase):
             return d_loss, fake_logits, fake_cls_logits, z_reconstruct_loss
 
         self.d_loss, fake_logits, fake_cls_logits, self.z_reconstruct_loss, *_ = get_d_loss(self.generator(self.z,self.cls_z))
+
+        if self.d_reconstruction_halfres:
+            self.d_loss = self.d_loss + recon_loss
 
         # build G loss
         self.g_classification_loss = 0
@@ -826,6 +870,9 @@ class BigGAN(GANBase):
             self.d_ops["losses"]["d_cls_loss"] = self.d_classification_loss
         if self.z_reconstruct:
             self.d_ops["losses"]["d_recon"] = self.z_reconstruct_loss
+
+        if self.d_reconstruction_halfres:
+            self.d_ops["losses"]["d_recon"] = recon_loss
 
         if self.alternative_head:
             self.g_ops_alt = create_train_ops(self.opt, self.g_loss_alt, g_vars_alt, self.virtual_batches)

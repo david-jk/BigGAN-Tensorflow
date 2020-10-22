@@ -787,3 +787,8 @@ def generator_loss(loss_func, fake, real):
         fake_loss = -tf.reduce_mean(fake)
 
     return fake_loss + real_loss
+
+def glu(x):
+    main, gate = tf.split(x, num_or_size_splits=2, axis=-1)
+    gate = tf.math.sigmoid(gate)
+    return main*gate
