@@ -35,6 +35,7 @@ class BigGAN(GANBase):
         self.g_z_dense_concat = args.g_z_dense_concat
         self.d_cls_dense_layers = args.d_cls_dense_layers
         self.d_compat_use_sn_in_classification = args.d_compat_use_sn_in_classification
+        self.d_compat_use_sn_in_critic_output = args.d_compat_use_sn_in_critic_output
         self.g_mixed_resblocks = args.g_mixed_resblocks
         self.g_mixed_resblock_ch_div = args.g_mixed_resblock_ch_div
         self.g_final_layer = args.g_final_layer
@@ -625,38 +626,35 @@ class BigGAN(GANBase):
             features = global_sum_pooling(x)
 
 
-            x = fully_connected(features, units=1, opt=opt, scope='D_logit')
+            critic_opt = self.make_opt_with_sn(opt, self.d_compat_use_sn_in_critic_output)
+            x = fully_connected(features, units=1, opt=critic_opt, scope='D_logit')
 
             outputs["real"] = x
 
             if self.acgan or self.z_reconstruct:
-                no_sn_opt = copy.copy(opt)
-                no_sn_opt["conv"] = copy.copy(opt["conv"])
-                if not self.d_compat_use_sn_in_classification:
-                    no_sn_opt["sn"] = False
-                    no_sn_opt["conv"]["sn"] = False
+                cls_opt = self.make_opt_with_sn(opt, self.d_compat_use_sn_in_classification)
 
             if self.acgan:
                 if self.d_cls_dense_layers:
                     with tf.variable_scope("classification", reuse=reuse):
                         cls_funits1 = self.round_up(ch/16.0+self.n_labels*1.25,8)
-                        y = fully_connected(features, units=cls_funits1, opt=no_sn_opt, scope='dense1')
+                        y = fully_connected(features, units=cls_funits1, opt=cls_opt, scope='dense1')
                         y = opt["act"](y)
                         cls_funits2 = self.round_up(cls_funits1/4.0+self.n_labels*1.1,4)
-                        y = fully_connected(y, units=cls_funits2, opt=no_sn_opt, scope='dense2')
+                        y = fully_connected(y, units=cls_funits2, opt=cls_opt, scope='dense2')
                         y = opt["act"](y)
-                        y = fully_connected(y, units=self.n_labels, opt=no_sn_opt, scope='DC_logit')
+                        y = fully_connected(y, units=self.n_labels, opt=cls_opt, scope='DC_logit')
                 else:
-                    y = fully_connected(features, units=self.n_labels, opt=no_sn_opt, scope='DC_logit')
+                    y = fully_connected(features, units=self.n_labels, opt=cls_opt, scope='DC_logit')
                 outputs["cls"] = y
 
             if self.z_reconstruct:
-                y = fully_connected(features, units=self.z_dim, opt=no_sn_opt, scope='z_reconstruct')
+                y = fully_connected(features, units=self.z_dim, opt=cls_opt, scope='z_reconstruct')
 
-                branch = fully_connected(features, units=self.scale_channels(self.z_dim,1.5), opt=no_sn_opt, scope='z_reconstruct_res1')
+                branch = fully_connected(features, units=self.scale_channels(self.z_dim,1.5), opt=cls_opt, scope='z_reconstruct_res1')
                 branch = bn(branch, opt)
                 branch = relu(branch)
-                branch = fully_connected(branch, units=self.z_dim, opt=no_sn_opt, scope='z_reconstruct_res2')
+                branch = fully_connected(branch, units=self.z_dim, opt=cls_opt, scope='z_reconstruct_res2')
 
                 y = y + branch
 
@@ -1341,3 +1339,10 @@ class BigGAN(GANBase):
 
         if cur_f_size!=sa_size:
             print("Warning: moving self-attention to " + str(cur_f_size) + "x" + str(cur_f_size) + " feature maps")
+
+    def make_opt_with_sn(self, src_opt, sn):
+        sn_opt = copy.copy(src_opt)
+        sn_opt["conv"] = copy.copy(src_opt["conv"])
+        sn_opt["sn"] = sn
+        sn_opt["conv"]["sn"] = sn
+        return sn_opt
