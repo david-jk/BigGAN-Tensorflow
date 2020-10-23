@@ -144,9 +144,15 @@ class BigGAN(GANBase):
         if self.d_ch <= 0: self.d_ch = self.ch
         self.d_grow_factor = args.d_grow_factor
         self.d_reconstruction_halfres = args.d_reconstruction_halfres
+        self.d_reconstruction_texture = args.d_reconstruction_texture
         self.d_recon_ch = args.d_recon_ch
         self.d_recon_ld = args.d_recon_ld
+        self.d_tex_recon_ld = args.d_tex_recon_ld
+        self.d_tex_recon_ch = args.d_tex_recon_ch
+        self.d_tex_recon_feat_size = args.d_tex_recon_feat_size
+        self.d_tex_recon_patch_div = args.d_tex_recon_patch_div
         self.d_recon_bn_after_act = args.d_recon_bn_after_act
+        self.d_save_recon_samples = args.d_save_recon_samples
 
         self.sample_num = args.sample_num  # number of generated images to be saved
         self.static_sample_z = args.static_sample_z
@@ -618,6 +624,24 @@ class BigGAN(GANBase):
                         half_upscaled = self.simple_upscaler(x, base_width=self.d_recon_ch, layers=self.depth - 4, opt=opt)
                         outputs["coarse_upscaled"] = half_upscaled
 
+                if self.d_reconstruction_texture:
+                    if x.get_shape()[1]==self.d_tex_recon_feat_size:
+
+                        patch_size = self.img_size//self.d_tex_recon_patch_div
+                        feat_patch_size = self.d_tex_recon_feat_size//self.d_tex_recon_patch_div
+                        recon_layers = int(math.log2(patch_size//feat_patch_size))
+
+                        ro_x, ro_y = self.random_crop_offsets(tf.shape(x), feat_patch_size)
+                        outputs["rnd_offset_x"] = ro_x
+                        outputs["rnd_offset_y"] = ro_y
+
+                        # fixme: apply different offsets to each sample
+                        feature_crop = tf.image.crop_to_bounding_box(x, ro_x[0], ro_y[0], feat_patch_size, feat_patch_size)
+
+                        texture_upscaled = self.simple_upscaler(feature_crop, base_width=self.d_tex_recon_ch, layers=recon_layers, opt=opt, scope="tex_upscaler")
+
+                        outputs["texture_upscaled"] = texture_upscaled
+
             ch=self.d_channels_for_block(b_i-1)  # last layer has same width as previous one
 
             x = resblock(x, channels=ch, use_bias=self.d_use_bias, opt=opt, scope='resblock')
@@ -761,6 +785,27 @@ class BigGAN(GANBase):
             recon_shape = reconstructed_half_img.get_shape()
             recon_pixels = int(recon_shape[0]*recon_shape[1]*recon_shape[2]*recon_shape[3])
             recon_loss = tf.norm(reconstructed_half_img - half_inputs, ord='euclidean') * (1.0/recon_pixels) * 1000.0 * self.d_recon_ld
+            self.recon_fake = reconstructed_half_img
+            self.recon_real = half_inputs
+            ro_x = d_outputs_real["rnd_offset_x"]
+            ro_y = d_outputs_real["rnd_offset_y"]
+
+        if self.d_reconstruction_texture:
+            reconstructed_tex = d_outputs_real["texture_upscaled"]
+
+            patch_size = self.img_size//self.d_tex_recon_patch_div
+            offset_factor = self.img_size//self.d_tex_recon_feat_size
+
+            orig_tex = tf.image.crop_to_bounding_box(augmented_inputs, ro_x[0]*offset_factor, ro_y[0]*offset_factor, patch_size, patch_size)
+            recon_shape = reconstructed_tex.get_shape()
+            recon_pixels = int(recon_shape[0]*recon_shape[1]*recon_shape[2]*recon_shape[3])
+            tex_recon_loss = tf.norm(reconstructed_tex - orig_tex, ord='euclidean')*(
+                        1.0/recon_pixels)*1000.0*self.d_tex_recon_ld
+
+            self.tex_recon_fake = reconstructed_tex
+            self.tex_recon_real = orig_tex
+
+
 
         if self.acgan:
             real_cls_logits = d_outputs_real["cls"]
@@ -818,6 +863,9 @@ class BigGAN(GANBase):
         if self.d_reconstruction_halfres:
             self.d_loss = self.d_loss + recon_loss
 
+        if self.d_reconstruction_texture:
+            self.d_loss = self.d_loss + tex_recon_loss
+
         # build G loss
         self.g_classification_loss = 0
         if self.acgan:
@@ -871,6 +919,9 @@ class BigGAN(GANBase):
 
         if self.d_reconstruction_halfres:
             self.d_ops["losses"]["d_recon"] = recon_loss
+
+        if self.d_reconstruction_halfres:
+            self.d_ops["losses"]["d_tex_recon"] = tex_recon_loss
 
         if self.alternative_head:
             self.g_ops_alt = create_train_ops(self.opt, self.g_loss_alt, g_vars_alt, self.virtual_batches)
@@ -974,9 +1025,32 @@ class BigGAN(GANBase):
                     nonlocal summaries
                     summaries += summary
 
+                save_recon = self.d_save_recon_samples and (counter+1)%self.print_freq == 0
+                save_recon_h = self.d_reconstruction_halfres and save_recon
+                save_recon_tex = self.d_reconstruction_texture and save_recon
+                extra_tensors = []
+
+                if save_recon_h:
+                    extra_tensors += [self.recon_real, self.recon_fake]
+
+                if save_recon_tex:
+                    extra_tensors += [self.tex_recon_real, self.tex_recon_fake]
+
                 # update D network
                 d_feed_dict = self.rnd_cls_feed_dict() if self.acgan else None
-                d_losses, _, d_summaries, *__ = run_ops(self.sess, self.d_ops, feed_dict=d_feed_dict, create_summaries=True)
+                d_losses, extra_results, d_summaries, *__ = run_ops(self.sess, self.d_ops, extra_tensors, feed_dict=d_feed_dict, create_summaries=True)
+
+                et_i = 0
+                if save_recon_h:
+                    self.save_samples(extra_results[et_i], 'recon_real',(epoch,idx+1))
+                    self.save_samples(extra_results[et_i+1], 'recon_fake',(epoch,idx+1))
+                    et_i += 2
+
+                if save_recon_tex:
+                    self.save_samples(extra_results[et_i], 'txrecon_real',(epoch,idx+1))
+                    self.save_samples(extra_results[et_i+1], 'txrecon_fake',(epoch,idx+1))
+                    et_i += 2
+
                 add_losses(d_losses)
                 add_summaries(d_summaries)
 
@@ -1346,3 +1420,9 @@ class BigGAN(GANBase):
         sn_opt["sn"] = sn
         sn_opt["conv"]["sn"] = sn
         return sn_opt
+
+    def random_crop_offsets(self, img_shape, crop_size):
+        image_size = img_shape[1:3]
+        offset_x = tf.random.uniform([img_shape[0]], maxval=image_size[0] - crop_size + 1, dtype=tf.int32)
+        offset_y = tf.random.uniform([img_shape[0]], maxval=image_size[1] - crop_size + 1, dtype=tf.int32)
+        return offset_x, offset_y

@@ -53,3 +53,18 @@ class GANBase(object):
         self.da_policy = args.da_policy
         if self.da_policy=='full':
             self.da_policy = 'color,translation,cutout'
+
+
+    def save_samples(self, images, name, values):
+        format_str = './' + self.sample_dir + '/' + self.model_name + '_'+name+'_{:02d}_{:05d}'
+        for v in values[2:]:
+            format_str+='_{:03d}'
+        format_str += '.png'
+
+        img_count = len(images)
+        sq_len = int(math.sqrt(img_count))
+        sq_w, sq_h = sq_len, sq_len
+        if (sq_w+1)*sq_h<=img_count:
+            sq_w+=1
+
+        save_images(images[:(sq_w*sq_h), :, :, :], [sq_h, sq_w], format_str.format(*values))
