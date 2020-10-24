@@ -330,3 +330,42 @@ def create_hist_summaries():
 
 def round_up(val, multiple):
     return (int(val) + multiple - 1) // multiple * multiple
+
+
+def cls_loss_fn(type, cls_weights):
+
+    if ',' in type:
+        parts = type.split(',')
+        loss_func_types = []
+        slice_sizes = []
+        for part in parts:
+            size, slice_type = part.split('-')
+            loss_func_types+=[slice_type]
+            slice_sizes+=[int(size)]
+
+        cls_weight_slices = tf.split(cls_weights, num_or_size_splits=slice_sizes, axis=-1)
+        loss_funcs = []
+        for i, type in enumerate(loss_func_types):
+            loss_funcs+=[cls_loss_fn(type,cls_weight_slices[i])]
+
+        def loss(truth, answer):
+            truth_slices = tf.split(truth, num_or_size_splits=slice_sizes, axis=-1)
+            answer_slices = tf.split(answer, num_or_size_splits=slice_sizes, axis=-1)
+            total_loss = 0
+            for i, fn in enumerate(loss_funcs):
+                slice_loss = fn(truth_slices[i], answer_slices[i])
+                total_loss = slice_loss + total_loss
+            return total_loss
+
+        return loss
+
+    if type=='logistic':
+        def loss(truth, answer):
+            return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=truth, logits=answer)*cls_weights)
+        return loss
+    elif type=='euclidean':
+        def loss(truth, answer):
+            return tf.norm((answer - truth)*cls_weights, ord='euclidean')
+        return loss
+    else:
+        raise ValueError("Invalid label loss type: " + type)

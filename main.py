@@ -81,7 +81,7 @@ def parse_args():
     parser.add_argument('--cls_embedding', type=str2bool, default=False, help='use a shared embedding for labels')
     parser.add_argument('--cls_embedding_size', type=int, default=0, help='size of class embedding, 0=auto')
     parser.add_argument('--label_file', type=str, default='', help='label file, required if n_labels>0')
-    parser.add_argument('--cls_loss_type', type=str, default='logistic', help='loss type for labels [logistic, euclidean]')
+    parser.add_argument('--cls_loss_type', type=str, default='logistic', help='loss type for labels [logistic, euclidean, [<n>-<type>,<n2>-<type2>...]')
     parser.add_argument('--weight_file', type=str, default='', help='weight file containing sample selection probabilities')
     parser.add_argument('--g_first_level_dense_layer', type=str2bool, default=True, help='adds an extra dense layer between the z inputs and the 4x4 layer')
     parser.add_argument('--g_other_level_dense_layer', type=str2bool, default=False, help='adds an extra dense layer between the z inputs and the intermediate layers')

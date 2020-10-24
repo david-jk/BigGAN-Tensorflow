@@ -819,15 +819,7 @@ class BigGAN(GANBase):
 
         if self.acgan:
             cls_weights = tf.constant(self.cls_loss_weights, dtype=gan_dtype)
-
-            def cls_loss(truth, answer):
-                if self.cls_loss_type=='logistic':
-                    return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=truth, logits=answer)*cls_weights)
-                elif self.cls_loss_type=='euclidean':
-                    return tf.norm((answer-truth)*cls_weights, ord='euclidean')
-                else:
-                    raise ValueError("Invalid label loss type: "+self.cls_loss_type)
-
+            cls_loss = cls_loss_fn(self.cls_loss_type, cls_weights)
             self.d_classification_loss = self.d_cls_loss_weight*cls_loss(self.label_input, real_cls_logits)
 
         # output of D for fake images
