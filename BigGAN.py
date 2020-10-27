@@ -143,7 +143,10 @@ class BigGAN(GANBase):
         self.d_ch = args.d_ch
         if self.d_ch <= 0: self.d_ch = self.ch
         self.d_grow_factor = args.d_grow_factor
+        self.d_reconstruction = args.d_reconstruction
         self.d_reconstruction_halfres = args.d_reconstruction_halfres
+        if self.d_reconstruction_halfres:
+            self.d_reconstruction = True
         self.d_reconstruction_texture = args.d_reconstruction_texture
         self.d_recon_ch = args.d_recon_ch
         self.d_recon_ld = args.d_recon_ld
@@ -618,11 +621,11 @@ class BigGAN(GANBase):
                 ch=self.d_channels_for_block(b_i)
                 ch_mul=ch_mul*2
 
-                if self.d_reconstruction_halfres:
+                if self.d_reconstruction:
                     if x.get_shape()[1]==8:
-                        # upscale to half of image size
-                        half_upscaled = self.simple_upscaler(x, base_width=self.d_recon_ch, layers=self.depth - 4, opt=opt)
-                        outputs["coarse_upscaled"] = half_upscaled
+                        upscale_layers = self.depth - (4 if self.d_reconstruction_halfres else 3)
+                        upscaled = self.simple_upscaler(x, base_width=self.d_recon_ch, layers=upscale_layers, opt=opt)
+                        outputs["coarse_upscaled"] = upscaled
 
                 if self.d_reconstruction_texture:
                     if x.get_shape()[1]==self.d_tex_recon_feat_size:
@@ -779,14 +782,16 @@ class BigGAN(GANBase):
         d_outputs_real = self.discriminator(augmented_inputs)
         real_logits = d_outputs_real["real"]
 
-        if self.d_reconstruction_halfres:
-            reconstructed_half_img = d_outputs_real["coarse_upscaled"]
-            half_inputs = avg_pooling(augmented_inputs)
-            recon_shape = reconstructed_half_img.get_shape()
+        if self.d_reconstruction:
+            reconstructed_img = d_outputs_real["coarse_upscaled"]
+            recon_real_images = augmented_inputs
+            if self.d_reconstruction_halfres:
+                recon_real_images = avg_pooling(recon_real_images)
+            recon_shape = reconstructed_img.get_shape()
             recon_pixels = int(recon_shape[0]*recon_shape[1]*recon_shape[2]*recon_shape[3])
-            recon_loss = tf.norm(reconstructed_half_img - half_inputs, ord='euclidean') * (1.0/recon_pixels) * 1000.0 * self.d_recon_ld
-            self.recon_fake = reconstructed_half_img
-            self.recon_real = half_inputs
+            recon_loss = tf.norm(reconstructed_img - recon_real_images, ord='euclidean') * (1.0/recon_pixels) * 1000.0 * self.d_recon_ld
+            self.recon_fake = reconstructed_img
+            self.recon_real = recon_real_images
             ro_x = d_outputs_real["rnd_offset_x"]
             ro_y = d_outputs_real["rnd_offset_y"]
 
