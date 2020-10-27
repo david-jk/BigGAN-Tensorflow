@@ -148,6 +148,8 @@ class BigGAN(GANBase):
         self.d_grow_factor = args.d_grow_factor
         self.d_reconstruction = args.d_reconstruction
         self.d_reconstruction_halfres = args.d_reconstruction_halfres
+        if self.d_reconstruction_halfres:
+            self.d_reconstruction = True
         self.d_reconstruction_texture = args.d_reconstruction_texture
         self.d_recon_ch = args.d_recon_ch
         self.d_recon_ld = args.d_recon_ld
@@ -871,7 +873,7 @@ class BigGAN(GANBase):
 
         self.d_loss, fake_logits, fake_cls_logits, self.z_reconstruct_loss, *_ = get_d_loss(self.generator(self.z,self.cls_z))
 
-        if self.d_reconstruction_halfres:
+        if self.d_reconstruction:
             self.d_loss = self.d_loss + recon_loss
 
         if self.d_reconstruction_texture:
@@ -928,10 +930,10 @@ class BigGAN(GANBase):
         if self.z_reconstruct:
             self.d_ops["losses"]["d_recon"] = self.z_reconstruct_loss
 
-        if self.d_reconstruction_halfres:
+        if self.d_reconstruction:
             self.d_ops["losses"]["d_recon"] = recon_loss
 
-        if self.d_reconstruction_halfres:
+        if self.d_reconstruction_texture:
             self.d_ops["losses"]["d_tex_recon"] = tex_recon_loss
 
         if self.alternative_head:
@@ -1037,7 +1039,7 @@ class BigGAN(GANBase):
                     summaries += summary
 
                 save_recon = self.d_save_recon_samples and (counter+1)%self.print_freq == 0
-                save_recon_h = self.d_reconstruction_halfres and save_recon
+                save_recon_h = self.d_reconstruction and save_recon
                 save_recon_tex = self.d_reconstruction_texture and save_recon
                 extra_tensors = []
 
