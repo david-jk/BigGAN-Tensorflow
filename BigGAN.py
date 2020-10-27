@@ -25,6 +25,7 @@ class BigGAN(GANBase):
         self.cls_embedding_size = args.cls_embedding_size
         if self.cls_embedding and self.cls_embedding_size==0:
             self.cls_embedding_size = self.round_up(math.pow(self.n_labels, 0.88)+24, 8)
+        self.cls_embedding_concat = args.cls_embedding_concat
 
         self.cls_loss_type = args.cls_loss_type
         self.label_file = args.label_file
@@ -145,8 +146,6 @@ class BigGAN(GANBase):
         self.d_grow_factor = args.d_grow_factor
         self.d_reconstruction = args.d_reconstruction
         self.d_reconstruction_halfres = args.d_reconstruction_halfres
-        if self.d_reconstruction_halfres:
-            self.d_reconstruction = True
         self.d_reconstruction_texture = args.d_reconstruction_texture
         self.d_recon_ch = args.d_recon_ch
         self.d_recon_ld = args.d_recon_ld
@@ -335,9 +334,14 @@ class BigGAN(GANBase):
             if self.acgan:
                 if self.cls_embedding:
                     with tf.variable_scope('cls_embed'):
+                        orig_cls_z = cls_z
                         cls_z = fully_connected(cls_z, units=self.cls_embedding_size, scope='dense1', opt=opt)
                         cls_z = opt["act"](cls_z)
-                        clsz_size = self.cls_embedding_size
+                        if self.cls_embedding_concat:
+                            cls_z = tf.concat([orig_cls_z, cls_z], axis=-1)
+                            clsz_size = self.cls_embedding_size + self.n_labels
+                        else:
+                            clsz_size = self.cls_embedding_size
 
                 cls_z = tf.reshape(cls_z, shape=[-1, 1, 1, clsz_size])
                 self.cls_z_embedding = cls_z
