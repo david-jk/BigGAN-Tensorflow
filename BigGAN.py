@@ -129,6 +129,8 @@ class BigGAN(GANBase):
 
 
         self.use_gradient_penalty = bool(self.gradient_penalty_type)
+        self.g_flood = args.g_flood
+        self.d_flood = args.d_flood
 
 
         if self.use_gradient_penalty and self.z_reconstruct:
@@ -863,7 +865,7 @@ class BigGAN(GANBase):
                 z_reconstruct_loss = tf.norm(self.z - reconstructed_z, ord='euclidean') * loss_f
 
             # get loss for discriminator
-            d_loss = (discriminator_loss(self.d_loss_func, real=real_logits, fake=fake_logits)) + GP + self.d_classification_loss + (z_reconstruct_loss*5.0)
+            d_loss = (discriminator_loss(self.d_loss_func, real=real_logits, fake=fake_logits, flood_level = self.d_flood)) + GP + self.d_classification_loss + (z_reconstruct_loss*5.0)
 
             return d_loss, fake_logits, fake_cls_logits, z_reconstruct_loss
 
@@ -880,7 +882,7 @@ class BigGAN(GANBase):
         if self.acgan:
             self.g_classification_loss = self.g_cls_loss_weight * cls_loss(self.cls_z,fake_cls_logits)
 
-        self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits) + (self.g_classification_loss) + (self.z_reconstruct_loss*5.0)
+        self.g_loss = generator_loss(self.gan_type, fake=fake_logits, real=real_logits, flood_level = self.g_flood) + (self.g_classification_loss) + (self.z_reconstruct_loss*5.0)
         if self.g_regularization_method!='none':
             self.g_loss = tf.add_n([self.g_loss] + tf.losses.get_regularization_losses())
 

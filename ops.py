@@ -707,7 +707,7 @@ def spectral_norm(w, iteration=1):
 # Loss function
 ##################################################################################
 
-def discriminator_loss(loss_func, real, fake):
+def discriminator_loss(loss_func, real, fake, flood_level=0):
     real_loss = 0
     fake_loss = 0
 
@@ -748,9 +748,12 @@ def discriminator_loss(loss_func, real, fake):
 
     loss = real_loss + fake_loss
 
+    if flood_level:
+        loss = flood_loss(loss, flood_level)
+
     return loss
 
-def generator_loss(loss_func, fake, real):
+def generator_loss(loss_func, fake, real, flood_level=0):
 
     fake_loss = 0
     real_loss = 0
@@ -786,9 +789,17 @@ def generator_loss(loss_func, fake, real):
     if loss_func == 'hinge' :
         fake_loss = -tf.reduce_mean(fake)
 
-    return fake_loss + real_loss
+    loss = fake_loss + real_loss
+
+    if flood_level:
+        loss = flood_loss(loss, flood_level)
+
+    return loss
 
 def glu(x):
     main, gate = tf.split(x, num_or_size_splits=2, axis=-1)
     gate = tf.math.sigmoid(gate)
     return main*gate
+
+def flood_loss(loss, flood_level):
+    return tf.math.abs(loss - flood_level) + flood_level

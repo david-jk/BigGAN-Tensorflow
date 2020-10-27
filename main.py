@@ -63,6 +63,8 @@ def parse_args():
     parser.add_argument('--activation', type=str, default='prelu', help='default activation function [relu, prelu, lrelu]')
     parser.add_argument('--ld', type=float, default=10.0, help='The gradient penalty lambda')
     parser.add_argument('--multi_head', type=str2bool, default=False, help='enables joint training of two generator heads')
+    parser.add_argument('--d_flood', type=float, default=0.1, help='flood loss level for discriminator')
+    parser.add_argument('--g_flood', type=float, default=0.05, help='flood loss level for generator')
 
     parser.add_argument('--n_critic', type=int, default=1, help='The number of discriminator updates per generator update')
 
