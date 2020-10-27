@@ -155,6 +155,7 @@ class BigGAN(GANBase):
         self.d_tex_recon_patch_div = args.d_tex_recon_patch_div
         self.d_recon_bn_after_act = args.d_recon_bn_after_act
         self.d_save_recon_samples = args.d_save_recon_samples
+        self.d_final_conv = args.d_final_conv
 
         self.sample_num = args.sample_num  # number of generated images to be saved
         self.static_sample_z = args.static_sample_z
@@ -655,6 +656,13 @@ class BigGAN(GANBase):
             x = opt["act"](x)
 
             features = global_sum_pooling(x)
+
+            if self.d_final_conv:
+                features_ch = x.get_shape()[-1]
+                conv_ch = features_ch // 2
+                conv_path = conv(x, channels=conv_ch, kernel=4, stride=1, pad=0, use_bias=True, opt=opt, scope='final_conv')
+                conv_path = tf.reshape(conv_path, shape=[-1, conv_ch])
+                features = tf.concat([features, conv_path], axis=-1)
 
 
             critic_opt = self.make_opt_with_sn(opt, self.d_compat_use_sn_in_critic_output)
