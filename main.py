@@ -113,9 +113,9 @@ def parse_args():
 
     parser.add_argument('--save_cls_samples_to', type=str, default='', help='saves the chosen class Z values to the specified path')
     parser.add_argument('--load_cls_samples_from', type=str, default='', help='loads class samples from a file')
-    parser.add_argument('--d_reconstruction', type=str, default=False, help='have the discriminator reconstruct the input from feature maps')
-    parser.add_argument('--d_reconstruction_halfres', type=str, default=False, help='reconstruct the input at half size')
-    parser.add_argument('--d_reconstruction_texture', type=str, default=False, help='have the discriminator reconstruct a random part of input image from feature maps')
+    parser.add_argument('--d_reconstruction', type=str2bool, default=False, help='have the discriminator reconstruct the input from feature maps')
+    parser.add_argument('--d_reconstruction_halfres', type=str2bool, default=False, help='reconstruct the input at half size')
+    parser.add_argument('--d_reconstruction_texture', type=str2bool, default=False, help='have the discriminator reconstruct a random part of input image from feature maps')
     parser.add_argument('--d_tex_recon_feat_size', type=int, default=16, help='feature map size to reconstruct texture patch from')
     parser.add_argument('--d_tex_recon_patch_div', type=int, default=4, help='fractional texture patch size')
     parser.add_argument('--d_recon_ch', type=int, default=64, help='base number of channels in discriminator reconstruction')
