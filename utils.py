@@ -369,3 +369,36 @@ def cls_loss_fn(type, cls_weights):
         return loss
     else:
         raise ValueError("Invalid label loss type: " + type)
+
+
+def dict_append(dict1, dict2):
+    for key in dict2:
+        if not key in dict1:
+            dict1[key] = []
+
+        #dict1[key].append(dict2[key])
+        dict1[key] = np.append(dict1[key], dict2[key])
+
+    return dict1
+
+def dict_truncate(dict1, max_len):
+    for key in dict1:
+        vlen = len(dict1[key])
+        if vlen!=max_len:
+            dict1[key] = dict1[key][:min(vlen, max_len)]
+    return dict1
+
+def write_vectors(path, vecs):
+    with open(path, 'w') as f:
+        for vec in vecs:
+
+
+            #flatten = lambda t: [e for sublist in t for e in sublist]
+            #vec = flatten(vec)
+
+            try:
+                f.write("\t".join([str(e) for e in vec]))
+            except TypeError:
+                f.write(str(vec))
+
+            f.write('\n')

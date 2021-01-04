@@ -627,9 +627,6 @@ class BigGAN(GANBase):
                 if b_i==block_info["sa_index"]:
                     x=self_attention_2(x, channels=ch, opt=opt, scope='self_attention')
 
-                ch=self.d_channels_for_block(b_i)
-                ch_mul=ch_mul*2
-
                 if self.d_reconstruction:
                     if x.get_shape()[1]==8:
                         upscale_layers = self.depth - (4 if self.d_reconstruction_halfres else 3)
@@ -653,6 +650,9 @@ class BigGAN(GANBase):
                         texture_upscaled = self.simple_upscaler(feature_crop, base_width=self.d_tex_recon_ch, layers=recon_layers, opt=opt, scope="tex_upscaler")
 
                         outputs["texture_upscaled"] = texture_upscaled
+
+                ch=self.d_channels_for_block(b_i)
+                ch_mul=ch_mul*2
 
             ch=self.d_channels_for_block(b_i-1)  # last layer has same width as previous one
 
@@ -1309,6 +1309,8 @@ class BigGAN(GANBase):
                 cmds, z_samples = read_vectors(f)
 
                 use_ema=True
+                use_discriminator=False
+                requested_d_outputs = []
 
                 if "quit" in cmds:
                     os.remove(f)
@@ -1316,6 +1318,11 @@ class BigGAN(GANBase):
 
                 if "ema" in cmds:
                     use_ema=cmds["ema"]=='1'
+
+                if "use_discriminator" in cmds:
+                    use_discriminator=cmds["use_discriminator"]=='1'
+                    if "discriminator_outputs" in cmds:
+                        requested_d_outputs = cmds["discriminator_outputs"].split(',')
 
                 if "load_checkpoint" in cmds:
                     self.load_checkpoint(cmds["load_checkpoint"])
@@ -1332,8 +1339,15 @@ class BigGAN(GANBase):
                     z_samples[i] = [[z]]
 
                 if len(z_samples)>0:
-                    samples = self.generate(z_samples, cls_z, ema=use_ema)
-                    out_path = os.path.join(self.request_dir, os.path.splitext(os.path.basename(f))[0] + ".png")
+                    samples, *rest = self.generate(z_samples, cls_z, ema=use_ema, with_discriminator=use_discriminator)
+                    out_name = os.path.splitext(os.path.basename(f))[0]
+                    out_path = os.path.join(self.request_dir, out_name + ".png")
+                    if use_discriminator:
+                        disc_dict = rest[0]
+                        for key in disc_dict:
+                            if requested_d_outputs and key not in requested_d_outputs:
+                                continue
+                            write_vectors(os.path.join(self.request_dir, out_name + "_" + key + ".out"), disc_dict[key])
                     save_images(samples,[1, len(samples)],out_path.replace(".png",".tmp.png"))
                     os.rename(out_path.replace(".png",".tmp.png"),out_path)
                 os.remove(f)
@@ -1367,30 +1381,55 @@ class BigGAN(GANBase):
                         [image_frame_dim, image_frame_dim],
                         result_dir + '/' + self.model_name + '_test_{}.png'.format(i))
 
-
-    def generate(self, zv, cls_zv, ema=True):
+    def generate(self, zv, cls_zv, ema=True, with_discriminator=False):
 
         zvc = zv.copy()
-        while len(zvc) % self.batch_size != 0:
+        while len(zvc)%self.batch_size!=0:
             zvc.append(zvc[0])
             if cls_zv: cls_zv.append(cls_zv[0])
 
-        batches = int(np.ceil(len(zvc) / self.batch_size))
+        batches = int(np.ceil(len(zvc)/self.batch_size))
         for b in range(batches):
-            feed_dict = {self.sample_z: zvc[b * self.batch_size:(b + 1) * self.batch_size]}
+            feed_dict = {self.sample_z: zvc[b*self.batch_size:(b + 1)*self.batch_size]}
             if cls_zv:
-                feed_dict[self.cls_z]=cls_zv[b * self.batch_size:(b + 1) * self.batch_size]
+                feed_dict[self.cls_z] = cls_zv[b*self.batch_size:(b + 1)*self.batch_size]
 
             generator = self.sample_fake_images if ema else self.sample_fake_images_noema
+            if with_discriminator and not hasattr(self, 'gen_with_disc'):
+                self.gen_with_disc = self.discriminator(generator, reuse=True)
+                self.disc_tensors = [self.gen_with_disc[key] for key in sorted(self.gen_with_disc)]
+                #self.gen_with_disc_real = self.gen_with_disc["real"]
+                #self.gen_with_disc_cls = self.gen_with_disc["cls"]
 
-            batch = self.sess.run(generator, feed_dict)
-            if b == 0:
+
+            if with_discriminator:
+                #batch, real_batch, cls_batch = self.sess.run([generator, self.gen_with_disc_real, self.gen_with_disc_cls], feed_dict)
+                batch, *disc_tensors = self.sess.run([generator] + self.disc_tensors, feed_dict)
+                disc_dict={}
+                for i, key in enumerate(sorted(self.gen_with_disc)):
+                    disc_dict[key] = disc_tensors[i]
+
+            else:
+                batch = self.sess.run(generator, feed_dict)
+            if b==0:
                 samples = batch
+                if with_discriminator:
+                    disc_results = disc_dict
             else:
                 samples = np.append(samples, batch, axis=0)
+                if with_discriminator:
+                    dict_append(disc_results, disc_dict)
 
-        if len(zvc)==len(zv): return samples
-        else: return samples[:len(zv)]
+        if with_discriminator:
+            dict_truncate(disc_results, len(zv))
+
+        if len(zvc)!=len(zv):
+            samples = samples[:len(zv)]
+
+        if with_discriminator:
+            return samples, disc_results
+        else:
+            return samples
 
     def draw_n_tags(self, n):
         tags=[]
