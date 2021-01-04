@@ -107,7 +107,14 @@ def deconv(x, channels, opt, kernel=4, stride=2, padding='SAME', use_bias=True, 
 
         return x
 
-def fully_connected(x, units, opt, use_bias=True, scope='fully_0'):
+def get_variable_with_custom_lr(name, shape, regularizer, lrmul):
+    w = tf.get_variable(name, shape, gan_dtype, initializer=tf.truncated_normal_initializer(mean=0.0, stddev=0.02/lrmul), regularizer=regularizer)
+    if (lrmul==1.0):
+        return w
+    else:
+        return w * lrmul
+
+def fully_connected(x, units, opt, use_bias=True, lrmul=1.0, scope='fully_0'):
     with tf.variable_scope(scope) as full_scope:
         x = flatten(x)
         shape = x.get_shape().as_list()
@@ -115,9 +122,9 @@ def fully_connected(x, units, opt, use_bias=True, scope='fully_0'):
 
         if opt.get("conv", {}).get("sn", True):
             if 'generator' in full_scope.name:
-                w = tf.get_variable("kernel", [channels, units], gan_dtype, initializer=weight_init, regularizer=opt["fc_regularizer"])
+                w = get_variable_with_custom_lr("kernel", shape=[channels, units], regularizer=opt["fc_regularizer"], lrmul=lrmul)
             else :
-                w = tf.get_variable("kernel", [channels, units], gan_dtype, initializer=weight_init, regularizer=None)
+                w = get_variable_with_custom_lr("kernel", shape=[channels, units], regularizer=None, lrmul=lrmul)
 
             if use_bias :
                 bias = tf.get_variable("bias", [units], initializer=tf.constant_initializer(0.0), dtype=gan_dtype)
@@ -796,7 +803,7 @@ def generator_loss(loss_func, fake, real, flood_level=0):
 
     return loss
 
-def glu(x):
+def glu(x, opt=None):
     main, gate = tf.split(x, num_or_size_splits=2, axis=-1)
     gate = tf.math.sigmoid(gate)
     return main*gate
