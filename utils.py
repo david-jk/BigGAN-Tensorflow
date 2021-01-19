@@ -68,6 +68,7 @@ def read_vectors(path):
 
     return cmds, vectors
 
+
 def read_weights(path):
     weights=read_labels(path)
     for fn in weights:
@@ -75,7 +76,7 @@ def read_weights(path):
 
     return weights
 
-def load_data(dataset_name, label_file, weight_file=None) :
+def load_data(dataset_name, label_file, weight_file=None, ignore_missing=False, n_labels=None) :
     if dataset_name == 'mnist' :
         x = load_mnist()
     elif dataset_name == 'cifar10' :
@@ -110,8 +111,11 @@ def load_data(dataset_name, label_file, weight_file=None) :
         for full in x:
             fn = os.path.basename(full)
             if fn not in labels:
-                raise RuntimeError("No label found for file "+fn)
-            used_labels.append(labels[fn])
+                if ignore_missing:
+                    used_labels.append([0.0]*n_labels)
+                else:
+                    raise RuntimeError("No label found for file "+fn)
+            else: used_labels.append(labels[fn])
     else: used_labels = None
 
     return x, used_labels

@@ -189,7 +189,7 @@ class BigGAN(GANBase):
         self.c_dim = args.c_dim
         self.alpha_mask = args.alpha_mask
         self.g_alpha_helper = args.g_alpha_helper
-        self.data, self.labels = load_data(dataset_name=self.dataset_name, label_file=self.label_file, weight_file=self.weight_file)
+        self.data, self.labels = load_data(dataset_name=self.dataset_name, label_file=self.label_file, weight_file=self.weight_file, ignore_missing=args.ignore_missing_labels, n_labels=self.n_labels)
 
         self.dataset_num = len(self.data)
 
