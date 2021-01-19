@@ -203,7 +203,7 @@ class BigGAN(GANBase):
         print("# gan type:", self.gan_type)
         print("# dataset:", self.dataset_name)
         print("# dataset number:", self.dataset_num)
-        print("# batch_size:", self.batch_size)
+        print("# batch_size:", self.batch_size, "*", self.virtual_batches)
         print("# epoch:", self.epoch)
         print("# iterations per epoch:", self.iterations_per_epoch)
 
