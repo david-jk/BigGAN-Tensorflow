@@ -1339,7 +1339,11 @@ class BigGAN(GANBase):
                     z_samples[i] = [[z]]
 
                 if len(z_samples)>0:
-                    samples, *rest = self.generate(z_samples, cls_z, ema=use_ema, with_discriminator=use_discriminator)
+                    if use_discriminator:
+                        samples, *rest = self.generate(z_samples, cls_z, ema=use_ema, with_discriminator=use_discriminator)
+                    else:
+                        samples = self.generate(z_samples, cls_z, ema=use_ema, with_discriminator=use_discriminator)
+
                     out_name = os.path.splitext(os.path.basename(f))[0]
                     out_path = os.path.join(self.request_dir, out_name + ".png")
                     if use_discriminator:
