@@ -50,7 +50,7 @@ def parse_args():
     parser.add_argument('--g_regularization_factor', type=float, default=0.0001, help='regularization weight for generator')
     parser.add_argument('--conv_padding', type=str, default='reflect', help='[zero / reflect]')
     parser.add_argument('--upsampling_method', type=str, default='deconv4', help='[deconv3 / deconv4 / deconv6 / subpixel2 / subpixel3 / resize_conv]')
-    parser.add_argument('--downsampling_method', type=str, default='strided_conv3', help='[strided_conv3 / resize_conv1 / resize_conv3 / pool_only / max_pool_only]')
+    parser.add_argument('--downsampling_method', type=str, default='strided_conv3', help='[strided_conv3 / resize_conv1 / resize_conv3 / resize_conv35 / pool_only / max_pool_only]')
     parser.add_argument('--g_conv', type=str, default='deconv3', help='[deconv3 / deconv4 / conv3 / conv5]')
     parser.add_argument('--g_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the generator')
     parser.add_argument('--d_grow_factor', type=float, default=2.0, help='channel scale factor for blocks in the discriminator')

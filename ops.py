@@ -278,6 +278,11 @@ def downconv(x, channels, opt, use_bias=True, method=None):
     elif method == 'resize_conv3':
         x = conv(x, channels, kernel=3, stride=1, pad=1, use_bias=use_bias, opt=opt)
         return avg_pooling(x)
+    elif method == 'resize_conv35':
+        channels5 = int(channels*0.333333333334)
+        channels3 = channels - channels5
+        x = conv(x, channels, kernel=str(channels3)+"x3,"+str(channels5)+"x5", stride=1, pad=1, use_bias=use_bias, opt=opt)
+        return avg_pooling(x)
     elif method == 'pool_only':
         return avg_pooling(x)
     elif method == 'max_pool_only':
