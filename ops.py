@@ -26,8 +26,39 @@ def subpixel_conv(x, channels, opt, kernel=3, scale=2, use_bias=True, scope='sub
     x = tf.nn.depth_to_space(x, block_size=scale)
     return x
 
+def decode_kernel_sizes(str):
+    parts = str.split(',')
+    slices = []
+    sum = 0
+    for part in parts:
+        size, kernel_size = part.split('x')
+        slices+=[{"size": int(size), "kernel": int(kernel_size)}]
+        sum+=int(size)
+
+    ret = {}
+    ret["slices"] = slices
+    ret["total_channels"] = sum
+
+    return ret
+
+def encode_kernel_sizes(slices, ch_mul=1.0):
+    return ",".join([str(int(float(slice["size"])*ch_mul+0.00000001))+"x"+str(slice["kernel"]) for slice in slices])
+
+
+
 def conv(x, channels, opt, kernel=4, stride=2, pad=0, dilation=1, use_bias=True, scope='conv_0'):
     with tf.variable_scope(scope) as full_scope:
+
+        if isinstance(kernel, str):
+            slices = decode_kernel_sizes(kernel)["slices"]
+            slice_convs = []
+            for slice in slices:
+                slice_conv = conv(x, slice["size"], opt, kernel=slice["kernel"], stride=stride, pad=(slice["kernel"]-1)//2, dilation=dilation, use_bias=use_bias, scope='conv'+str(slice["kernel"])+"_slice")
+                slice_convs += [slice_conv]
+
+            return tf.concat(slice_convs, axis=-1)
+
+
 
         tf_pad_type = 'VALID'
 

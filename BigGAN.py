@@ -48,6 +48,13 @@ class BigGAN(GANBase):
         self.g_final_mixed_conv_stacks = args.g_final_mixed_conv_stacks
         self.g_final_mixed_nodeconv2 = args.g_final_mixed_nodeconv2
         self.g_final_kernel = args.g_final_kernel
+        if self.g_final_kernel.isdigit():
+            self.g_final_kernel=int(self.g_final_kernel)
+
+        self.g_final_kernel_extra = args.g_final_kernel_extra
+        if self.g_final_kernel_extra.isdigit():
+            self.g_final_kernel_extra = int(self.g_final_kernel_extra)
+
         self.g_rgb_mix_kernel = args.g_rgb_mix_kernel
 
         if self.g_final_mixed_conv:
@@ -500,6 +507,8 @@ class BigGAN(GANBase):
                             slices.append(conv(x, channels=slice_units, kernel=3, stride=1, pad=1, use_bias=False, opt=opt, scope="slice1"))
                     else:
                         final_channels = self.scale_channels(self.ch, 0.5)
+                        if isinstance(self.g_final_kernel, str):
+                            final_channels = decode_kernel_sizes(self.g_final_kernel)["total_channels"]
 
                     use_bias = True
 
@@ -546,7 +555,7 @@ class BigGAN(GANBase):
                     x = prelu(x)
 
                     if self.g_final_layer_extra:
-                        x = conv(x, channels=24, kernel=self.g_final_kernel, stride=1, pad=1, use_bias=self.g_final_layer_extra_bias, opt=opt, scope='conv2')
+                        x = conv(x, channels=24, kernel=self.g_final_kernel_extra, stride=1, pad=1, use_bias=self.g_final_layer_extra_bias, opt=opt, scope='conv2')
                         x = prelu(x, scope='prelu2')
 
                     if self.alternative_head:
